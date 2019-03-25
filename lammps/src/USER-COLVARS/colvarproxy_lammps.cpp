@@ -146,7 +146,8 @@ void colvarproxy_lammps::init(const char *conf_file)
   if (_lmp->update->ntimestep != 0) {
     cvm::log("Setting initial step number from LAMMPS: "+
              cvm::to_str(_lmp->update->ntimestep)+"\n");
-    colvars->it = colvars->it_restart = _lmp->update->ntimestep;
+    colvars->it = colvars->it_restart =
+      static_cast<cvm::step_number>(_lmp->update->ntimestep);
   }
 
   if (cvm::debug()) {
@@ -156,6 +157,16 @@ void colvarproxy_lammps::init(const char *conf_file)
     cvm::log(cvm::line_marker);
     cvm::log("Info: done initializing the colvars proxy object.\n");
   }
+}
+
+void colvarproxy_lammps::add_config_file(const char *conf_file)
+{
+  colvars->read_config_file(conf_file);
+}
+
+void colvarproxy_lammps::add_config_string(const std::string &conf)
+{
+  colvars->read_config_string(conf);
 }
 
 colvarproxy_lammps::~colvarproxy_lammps()

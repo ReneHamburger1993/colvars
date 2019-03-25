@@ -1,7 +1,17 @@
+.SILENT:
 
-VERSION=1.0
-PLUGINDIR=${HOME}/lib/vmd/plugins/noarch/tcl
+VMFILES = cv_dashboard.tcl cv_dashboard_main.tcl cv_dashboard_editor.tcl cv_dashboard_plots.tcl pkgIndex.tcl templates
+VMVERSION = 1.0
+DIR = $(PLUGINDIR)/noarch/tcl/cv_dashboard$(VMVERSION)
 
-install:
-	mkdir -p ${PLUGINDIR}/cv_dashboard${VERSION} && \
-		rsync -avL --delete cv_dashboard.tcl pkgIndex.tcl templates ${PLUGINDIR}/cv_dashboard${VERSION}/. 
+bins:
+win32bins:
+dynlibs:
+staticlibs:
+win32staticlibs:
+
+distrib:
+	@echo "Copying cv_dashboard $(VMVERSION) files to $(DIR)"
+	mkdir -p $(DIR) 
+	cp -r $(VMFILES) $(DIR) 
+

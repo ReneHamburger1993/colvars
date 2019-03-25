@@ -125,6 +125,11 @@ public:
                   Parse_Mode const parse_mode = parse_normal);
   bool get_keyval(std::string const &conf,
                   char const *key,
+                  cvm::step_number &value,
+                  cvm::step_number const &def_value = 0,
+                  Parse_Mode const parse_mode = parse_normal);
+  bool get_keyval(std::string const &conf,
+                  char const *key,
                   std::string &value,
                   std::string const &def_value = std::string(""),
                   Parse_Mode const parse_mode = parse_normal);
@@ -216,6 +221,19 @@ protected:
                            std::vector<TYPE> const &def_values,
                            Parse_Mode const &parse_mode);
 
+  /// Extract the value of a variable from a string
+  template<typename TYPE>
+  int _get_keyval_scalar_value_(std::string const &key_str,
+                                std::string const &data,
+                                TYPE &value,
+                                TYPE const &def_value);
+
+  /// Handle the case where the user provides a keyword without value
+  template<typename TYPE>
+  int _get_keyval_scalar_novalue_(std::string const &key_str,
+                                  TYPE &value,
+                                  Parse_Mode const &parse_mode);
+
   /// Record that the keyword has just been user-defined
   template<typename TYPE>
   void mark_key_set_user(std::string const &key_str,
@@ -284,7 +302,7 @@ public:
                   size_t *save_pos = NULL);
 
   /// \brief Reads a configuration line, adds it to config_string, and returns
-  /// the stream \param is Input stream \param s String that will hold the
+  /// the stream \param is Input stream \param line String that will hold the
   /// configuration line, with comments stripped
   std::istream & read_config_line(std::istream &is, std::string &line);
 

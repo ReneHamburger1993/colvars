@@ -17,12 +17,13 @@ colvar::colvar()
 {
   runave_os = NULL;
 
-  prev_timestep = -1;
+  prev_timestep = -1L;
   after_restart = false;
   kinetic_energy = 0.0;
   potential_energy = 0.0;
 
-  init_cv_requires();
+  description = "uninitialized colvar";
+  init_dependencies();
 }
 
 
@@ -217,7 +218,7 @@ int colvar::init(std::string const &conf)
   // Allow scripted/custom functions to be defined as periodic
   if ( (is_enabled(f_cv_scripted) || is_enabled(f_cv_custom_function)) && is_enabled(f_cv_scalar) ) {
     if (get_keyval(conf, "period", period, 0.)) {
-      set_enabled(f_cv_periodic, true);
+      enable(f_cv_periodic);
       get_keyval(conf, "wrapAround", wrap_center, 0.);
     }
   }
@@ -826,9 +827,15 @@ void colvar::build_atom_list(void)
 
   for (size_t i = 0; i < cvcs.size(); i++) {
     for (size_t j = 0; j < cvcs[i]->atom_groups.size(); j++) {
-      cvm::atom_group &ag = *(cvcs[i]->atom_groups[j]);
+      cvm::atom_group const &ag = *(cvcs[i]->atom_groups[j]);
       for (size_t k = 0; k < ag.size(); k++) {
         temp_id_list.push_back(ag[k].id);
+      }
+      if (ag.is_enabled(f_ag_fitting_group) && ag.is_enabled(f_ag_fit_gradients)) {
+        cvm::atom_group const &fg = *(ag.fitting_group);
+        for (size_t k = 0; k < fg.size(); k++) {
+          temp_id_list.push_back(fg[k].id);
+        }
       }
     }
   }
@@ -836,12 +843,9 @@ void colvar::build_atom_list(void)
   temp_id_list.sort();
   temp_id_list.unique();
 
-  // atom_ids = std::vector<int> (temp_id_list.begin(), temp_id_list.end());
-  unsigned int id_i = 0;
   std::list<int>::iterator li;
   for (li = temp_id_list.begin(); li != temp_id_list.end(); ++li) {
-    atom_ids[id_i] = *li;
-    id_i++;
+    atom_ids.push_back(*li);
   }
 
   temp_id_list.clear();
@@ -929,6 +933,131 @@ int colvar::parse_analysis(std::string const &conf)
 }
 
 
+int colvar::init_dependencies() {
+  size_t i;
+  if (features().size() == 0) {
+    for (i = 0; i < f_cv_ntot; i++) {
+      modify_features().push_back(new feature);
+    }
+
+    init_feature(f_cv_active, "active", f_type_dynamic);
+    // Do not require f_cvc_active in children, as some components may be disabled
+    // Colvars must be either a linear combination, or scalar (and polynomial) or scripted/custom
+    require_feature_alt(f_cv_active, f_cv_scalar, f_cv_linear, f_cv_scripted, f_cv_custom_function);
+
+    init_feature(f_cv_awake, "awake", f_type_static);
+    require_feature_self(f_cv_awake, f_cv_active);
+
+    init_feature(f_cv_gradient, "gradient", f_type_dynamic);
+    require_feature_children(f_cv_gradient, f_cvc_gradient);
+
+    init_feature(f_cv_collect_gradient, "collect gradient", f_type_dynamic);
+    require_feature_self(f_cv_collect_gradient, f_cv_gradient);
+    require_feature_self(f_cv_collect_gradient, f_cv_scalar);
+    // The following exlusion could be lifted by implementing the feature
+    exclude_feature_self(f_cv_collect_gradient, f_cv_scripted);
+    require_feature_children(f_cv_collect_gradient, f_cvc_explicit_gradient);
+
+    init_feature(f_cv_fdiff_velocity, "velocity from finite differences", f_type_dynamic);
+
+    // System force: either trivial (spring force); through extended Lagrangian, or calculated explicitly
+    init_feature(f_cv_total_force, "total force", f_type_dynamic);
+    require_feature_alt(f_cv_total_force, f_cv_extended_Lagrangian, f_cv_total_force_calc);
+
+    // Deps for explicit total force calculation
+    init_feature(f_cv_total_force_calc, "total force calculation", f_type_dynamic);
+    require_feature_self(f_cv_total_force_calc, f_cv_scalar);
+    require_feature_self(f_cv_total_force_calc, f_cv_linear);
+    require_feature_children(f_cv_total_force_calc, f_cvc_inv_gradient);
+    require_feature_self(f_cv_total_force_calc, f_cv_Jacobian);
+
+    init_feature(f_cv_Jacobian, "Jacobian derivative", f_type_dynamic);
+    require_feature_self(f_cv_Jacobian, f_cv_scalar);
+    require_feature_self(f_cv_Jacobian, f_cv_linear);
+    require_feature_children(f_cv_Jacobian, f_cvc_Jacobian);
+
+    init_feature(f_cv_hide_Jacobian, "hide Jacobian force", f_type_user);
+    require_feature_self(f_cv_hide_Jacobian, f_cv_Jacobian); // can only hide if calculated
+
+    init_feature(f_cv_extended_Lagrangian, "extended Lagrangian", f_type_user);
+    require_feature_self(f_cv_extended_Lagrangian, f_cv_scalar);
+    require_feature_self(f_cv_extended_Lagrangian, f_cv_gradient);
+
+    init_feature(f_cv_Langevin, "Langevin dynamics", f_type_user);
+    require_feature_self(f_cv_Langevin, f_cv_extended_Lagrangian);
+
+    init_feature(f_cv_linear, "linear", f_type_static);
+
+    init_feature(f_cv_scalar, "scalar", f_type_static);
+
+    init_feature(f_cv_output_energy, "output energy", f_type_user);
+
+    init_feature(f_cv_output_value, "output value", f_type_user);
+
+    init_feature(f_cv_output_velocity, "output velocity", f_type_user);
+    require_feature_self(f_cv_output_velocity, f_cv_fdiff_velocity);
+
+    init_feature(f_cv_output_applied_force, "output applied force", f_type_user);
+
+    init_feature(f_cv_output_total_force, "output total force", f_type_user);
+    require_feature_self(f_cv_output_total_force, f_cv_total_force);
+
+    init_feature(f_cv_subtract_applied_force, "subtract applied force from total force", f_type_user);
+    require_feature_self(f_cv_subtract_applied_force, f_cv_total_force);
+
+    init_feature(f_cv_lower_boundary, "lower boundary", f_type_user);
+    require_feature_self(f_cv_lower_boundary, f_cv_scalar);
+
+    init_feature(f_cv_upper_boundary, "upper boundary", f_type_user);
+    require_feature_self(f_cv_upper_boundary, f_cv_scalar);
+
+    init_feature(f_cv_grid, "grid", f_type_dynamic);
+    require_feature_self(f_cv_grid, f_cv_lower_boundary);
+    require_feature_self(f_cv_grid, f_cv_upper_boundary);
+
+    init_feature(f_cv_runave, "running average", f_type_user);
+
+    init_feature(f_cv_corrfunc, "correlation function", f_type_user);
+
+    init_feature(f_cv_scripted, "scripted", f_type_user);
+
+    init_feature(f_cv_custom_function, "custom function", f_type_user);
+    exclude_feature_self(f_cv_custom_function, f_cv_scripted);
+
+    init_feature(f_cv_periodic, "periodic", f_type_static);
+    require_feature_self(f_cv_periodic, f_cv_scalar);
+    init_feature(f_cv_scalar, "scalar", f_type_static);
+    init_feature(f_cv_linear, "linear", f_type_static);
+    init_feature(f_cv_homogeneous, "homogeneous", f_type_static);
+
+    // because total forces are obtained from the previous time step,
+    // we cannot (currently) have colvar values and total forces for the same timestep
+    init_feature(f_cv_multiple_ts, "multiple timestep colvar", f_type_static);
+    exclude_feature_self(f_cv_multiple_ts, f_cv_total_force_calc);
+
+    // check that everything is initialized
+    for (i = 0; i < colvardeps::f_cv_ntot; i++) {
+      if (is_not_set(i)) {
+        cvm::error("Uninitialized feature " + cvm::to_str(i) + " in " + description);
+      }
+    }
+  }
+
+  // Initialize feature_states for each instance
+  feature_states.reserve(f_cv_ntot);
+  for (i = 0; i < f_cv_ntot; i++) {
+    feature_states.push_back(feature_state(true, false));
+    // Most features are available, so we set them so
+    // and list exceptions below
+   }
+
+  feature_states[f_cv_fdiff_velocity].available =
+    cvm::main()->proxy->simulation_running();
+
+  return COLVARS_OK;
+}
+
+
 void colvar::setup()
 {
   // loop over all components to update masses and charges of all groups
@@ -943,14 +1072,25 @@ void colvar::setup()
 }
 
 
+std::vector<std::vector<int> > colvar::get_atom_lists()
+{
+  std::vector<std::vector<int> > lists;
+  for (size_t i = 0; i < cvcs.size(); i++) {
+    std::vector<std::vector<int> > li = cvcs[i]->get_atom_lists();
+    lists.insert(lists.end(), li.begin(), li.end());
+  }
+  return lists;
+}
+
+
 colvar::~colvar()
 {
   // There is no need to call free_children_deps() here
   // because the children are cvcs and will be deleted
   // just below
 
-//   Clear references to this colvar's cvcs as children
-//   for dependency purposes
+  // Clear references to this colvar's cvcs as children
+  // for dependency purposes
   remove_all_children();
 
   for (std::vector<cvc *>::reverse_iterator ci = cvcs.rbegin();
@@ -1260,6 +1400,15 @@ int colvar::collect_cvc_gradients()
             size_t a = std::lower_bound(atom_ids.begin(), atom_ids.end(),
                                         ag[k].id) - atom_ids.begin();
             atomic_gradients[a] += coeff * ag[k].grad;
+          }
+        }
+        if (ag.is_enabled(f_ag_fitting_group) && ag.is_enabled(f_ag_fit_gradients)) {
+          cvm::atom_group const &fg = *(ag.fitting_group);
+          for (size_t k = 0; k < fg.size(); k++) {
+            size_t a = std::lower_bound(atom_ids.begin(), atom_ids.end(),
+                                        fg[k].id) - atom_ids.begin();
+            // fit gradients are in the unrotated (simulation) frame
+            atomic_gradients[a] += coeff * fg.fit_gradients[k];
           }
         }
       }
@@ -1735,7 +1884,7 @@ int colvar::update_cvc_config(std::vector<std::string> const &confs)
 
 
 // ******************** METRIC FUNCTIONS ********************
-// Use the metrics defined by \link cvc \endlink objects
+// Use the metrics defined by \link colvar::cvc \endlink objects
 
 
 bool colvar::periodic_boundaries(colvarvalue const &lb, colvarvalue const &ub) const

@@ -20,12 +20,12 @@
 
 /// \brief Colvar component (base class for collective variables)
 ///
-/// A \link cvc \endlink object (or an object of a
+/// A \link colvar::cvc \endlink object (or an object of a
 /// cvc-derived class) implements the calculation of a collective
 /// variable, its gradients and any other related physical quantities
 /// that depend on microscopic degrees of freedom.
 ///
-/// No restriction is set to what kind of calculation a \link cvc \endlink
+/// No restriction is set to what kind of calculation a \link colvar::cvc \endlink
 /// object performs (usually an analytical function of atomic coordinates).
 /// The only constraints are that: \par
 ///
@@ -35,9 +35,9 @@
 ///   alike, and allows an automatic selection of the applicable algorithms.
 ///
 /// - The object provides an implementation \link apply_force() \endlink to
-///   apply forces to atoms.  Typically, one or more \link cvm::atom_group
+///   apply forces to atoms.  Typically, one or more \link colvarmodule::atom_group
 ///   \endlink objects are used, but this is not a requirement for as long as
-///   the \link cvc \endlink object communicates with the simulation program.
+///   the \link colvar::cvc \endlink object communicates with the simulation program.
 ///
 /// <b> If you wish to implement a new collective variable component, you
 /// should write your own class by inheriting directly from \link
@@ -68,9 +68,9 @@ public:
   /// \brief Description of the type of collective variable
   ///
   /// Normally this string is set by the parent \link colvar \endlink
-  /// object within its constructor, when all \link cvc \endlink
+  /// object within its constructor, when all \link colvar::cvc \endlink
   /// objects are initialized; therefore the main "config string"
-  /// constructor does not need to define it.  If a \link cvc
+  /// constructor does not need to define it.  If a \link colvar::cvc
   /// \endlink is initialized and/or a different constructor is used,
   /// this variable definition should be set within the constructor.
   std::string function_type;
@@ -102,6 +102,9 @@ public:
   /// cvc \endlink
   virtual int init(std::string const &conf);
 
+  /// \brief Initialize dependency tree
+  virtual int init_dependencies();
+
   /// \brief Within the constructor, make a group parse its own
   /// options from the provided configuration string
   /// Returns reference to new group
@@ -115,7 +118,7 @@ public:
   /// \brief After construction, set data related to dependency handling
   int setup();
 
-  /// \brief Default constructor (used when \link cvc \endlink
+  /// \brief Default constructor (used when \link colvar::cvc \endlink
   /// objects are declared within other ones)
   cvc();
 
@@ -140,6 +143,9 @@ public:
     }
     cvc_features.clear();
   }
+
+  /// \brief Get vector of vectors of atom IDs for all atom groups
+  virtual std::vector<std::vector<int> > get_atom_lists();
 
   /// \brief Obtain data needed for the calculation for the backend
   virtual void read_data();

@@ -3,6 +3,7 @@
 
 #include <sstream>
 #include <iostream>
+#include <algorithm>
 
 #include "colvarmodule.h"
 #include "colvarvalue.h"
@@ -23,25 +24,6 @@ namespace {
   }
 
 }
-
-
-#if (__cplusplus >= 201103L)
-#define TEMPLATE_TYPES_EQUAL(X,Y) (std::is_same<X,Y>::value)
-#else
-// This hack won't need to stick around much longer
-template<typename T, typename U> class TEMPLATE_TYPES_EQUAL
-{
-private:
-  static bool const value = false;
-public:
-  inline operator bool() const { return value; }
-};
-template<typename T> class TEMPLATE_TYPES_EQUAL<T,T>
-{
-private:
-  static bool const value = true;
-};
-#endif
 
 
 bool colvarparse::get_key_string_value(std::string const &conf,
@@ -113,6 +95,78 @@ void colvarparse::error_key_required(std::string const &key_str,
 
 
 template<typename TYPE>
+int colvarparse::_get_keyval_scalar_value_(std::string const &key_str,
+                                           std::string const &data,
+                                           TYPE &value,
+                                           TYPE const &def_value)
+{
+  std::istringstream is(data);
+  size_t value_count = 0;
+  TYPE x(def_value);
+
+  while (is >> x) {
+    value = x;
+    value_count++;
+  }
+
+  if (value_count == 0) {
+    return cvm::error("Error: in parsing \""+
+                      key_str+"\".\n", INPUT_ERROR);
+  }
+
+  if (value_count > 1) {
+    return cvm::error("Error: multiple values "
+                      "are not allowed for keyword \""+
+                      key_str+"\".\n", INPUT_ERROR);
+  }
+
+  return COLVARS_OK;
+}
+
+
+template<>
+int colvarparse::_get_keyval_scalar_value_(std::string const &key_str,
+                                           std::string const &data,
+                                           bool &value,
+                                           bool const &def_value)
+{
+  if ( (data == std::string("on")) ||
+       (data == std::string("yes")) ||
+       (data == std::string("true")) ) {
+    set_bool(reinterpret_cast<void *>(&value), true);
+  } else if ( (data == std::string("off")) ||
+              (data == std::string("no")) ||
+              (data == std::string("false")) ) {
+    set_bool(reinterpret_cast<void *>(&value), false);
+  } else {
+    return cvm::error("Error: boolean values only are allowed "
+                      "for \""+key_str+"\".\n", INPUT_ERROR);
+  }
+  return COLVARS_OK;
+}
+
+
+template<typename TYPE>
+int colvarparse::_get_keyval_scalar_novalue_(std::string const &key_str,
+                                             TYPE &value,
+                                             Parse_Mode const &parse_mode)
+{
+  return cvm::error("Error: improper or missing value "
+                    "for \""+key_str+"\".\n", INPUT_ERROR);
+}
+
+template<>
+int colvarparse::_get_keyval_scalar_novalue_(std::string const &key_str,
+                                             bool &value,
+                                             Parse_Mode const &parse_mode)
+{
+  set_bool(reinterpret_cast<void *>(&value), true);
+  mark_key_set_user<bool>(key_str, value, parse_mode);
+  return COLVARS_OK;
+}
+
+
+template<typename TYPE>
 bool colvarparse::_get_keyval_scalar_(std::string const &conf,
                                       char const *key,
                                       TYPE &value,
@@ -126,56 +180,16 @@ bool colvarparse::_get_keyval_scalar_(std::string const &conf,
 
   if (data.size()) {
 
-    if (TEMPLATE_TYPES_EQUAL(TYPE, bool)) {
-      if ( (data == std::string("on")) ||
-           (data == std::string("yes")) ||
-           (data == std::string("true")) ) {
-        set_bool(reinterpret_cast<void *>(&value), true);
-      } else if ( (data == std::string("off")) ||
-                  (data == std::string("no")) ||
-                  (data == std::string("false")) ) {
-        set_bool(reinterpret_cast<void *>(&value), false);
-      } else {
-        cvm::error("Error: boolean values only are allowed "
-                   "for \""+key_str+"\".\n", INPUT_ERROR);
-      }
-
-    } else {
-
-      std::istringstream is(data);
-      size_t value_count = 0;
-      TYPE x(def_value);
-
-      while (is >> x) {
-        value = x;
-        value_count++;
-      }
-
-      if (value_count == 0) {
-        cvm::error("Error: in parsing \""+
-                   key_str+"\".\n", INPUT_ERROR);
-      }
-
-      if (value_count > 1) {
-        cvm::error("Error: multiple values "
-                   "are not allowed for keyword \""+
-                   key_str+"\".\n", INPUT_ERROR);
-      }
-    }
+    _get_keyval_scalar_value_<TYPE>(key_str, data, value, def_value);
 
     mark_key_set_user<TYPE>(key_str, value, parse_mode);
 
   } else { // No string value
 
     if (b_found_any) {
-      if (TEMPLATE_TYPES_EQUAL(TYPE, bool)) {
-        // An empty string counts as a user-provided true value
-        set_bool(reinterpret_cast<void *>(&value), true);
-        mark_key_set_user<TYPE>(key_str, value, parse_mode);
-      } else {
-        cvm::error("Error: improper or missing value "
-                   "for \""+key_str+"\".\n", INPUT_ERROR);
-      }
+
+      _get_keyval_scalar_novalue_<TYPE>(key_str, value, parse_mode);
+
     } else {
 
       if (parse_mode & parse_required) {
@@ -305,6 +319,15 @@ bool colvarparse::get_keyval(std::string const &conf,
                              Parse_Mode const parse_mode)
 {
   return _get_keyval_scalar_<long>(conf, key, value, def_value, parse_mode);
+}
+
+bool colvarparse::get_keyval(std::string const &conf,
+                             char const *key,
+                             cvm::step_number &value,
+                             cvm::step_number const &def_value,
+                             Parse_Mode const parse_mode)
+{
+  return _get_keyval_scalar_<cvm::step_number>(conf, key, value, def_value, parse_mode);
 }
 
 bool colvarparse::get_keyval(std::string const &conf,
@@ -468,6 +491,10 @@ void colvarparse::strip_values(std::string &conf)
   size_t offset = 0;
   data_begin_pos.sort();
   data_end_pos.sort();
+  std::list<size_t>::iterator data_begin_pos_last = std::unique(data_begin_pos.begin(), data_begin_pos.end());
+  data_begin_pos.erase(data_begin_pos_last, data_begin_pos.end());
+  std::list<size_t>::iterator data_end_pos_last = std::unique(data_end_pos.begin(), data_end_pos.end());
+  data_end_pos.erase(data_end_pos_last, data_end_pos.end());
 
   std::list<size_t>::iterator data_begin = data_begin_pos.begin();
   std::list<size_t>::iterator data_end   = data_end_pos.begin();

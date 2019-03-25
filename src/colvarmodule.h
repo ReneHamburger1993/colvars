@@ -84,6 +84,9 @@ public:
   // TODO colvarscript should be unaware of colvarmodule's internals
   friend class colvarscript;
 
+  /// Use a 64-bit integer to store the step number
+  typedef long long step_number;
+
   /// Defining an abstract real number allows to switch precision
   typedef  double    real;
 
@@ -213,19 +216,19 @@ public:
 
 
   /// Current step number
-  static long it;
+  static step_number it;
   /// Starting step number for this run
-  static long it_restart;
+  static step_number it_restart;
 
   /// Return the current step number from the beginning of this run
-  static inline long step_relative()
+  static inline step_number step_relative()
   {
     return it - it_restart;
   }
 
   /// Return the current step number from the beginning of the whole
   /// calculation
-  static inline long step_absolute()
+  static inline step_number step_absolute()
   {
     return it;
   }
@@ -266,9 +269,10 @@ private:
   std::vector<atom_group *> named_atom_groups;
 public:
   /// Register a named atom group into named_atom_groups
-  inline void register_named_atom_group(atom_group * ag) {
-    named_atom_groups.push_back(ag);
-  }
+  void register_named_atom_group(atom_group *ag);
+
+  /// Remove a named atom group from named_atom_groups
+  void unregister_named_atom_group(atom_group *ag);
 
   /// Array of collective variables
   std::vector<colvar *> *variables();
@@ -317,8 +321,7 @@ public:
   /// \brief How many objects are configured yet?
   size_t size() const;
 
-  /// \brief Constructor \param config_name Configuration file name
-  /// \param restart_name (optional) Restart file name
+  /// \brief Constructor
   colvarmodule(colvarproxy *proxy);
 
   /// Destructor
@@ -328,6 +331,7 @@ public:
   int reset();
 
   /// Open a config file, load its contents, and pass it to config_string()
+  /// \param config_file_name Configuration file name
   int read_config_file(char const *config_file_name);
 
   /// \brief Parse a config string assuming it is a complete configuration
@@ -513,6 +517,10 @@ public:
 
   /// Convert to string for output purposes
   static std::string to_str(long int const &x,
+                            size_t width = 0, size_t prec = 0);
+
+  /// Convert to string for output purposes
+  static std::string to_str(step_number const &x,
                             size_t width = 0, size_t prec = 0);
 
   /// Convert to string for output purposes

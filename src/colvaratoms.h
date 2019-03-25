@@ -10,7 +10,7 @@
 
 
 /// \brief Stores numeric id, mass and all mutable data for an atom,
-/// mostly used by a \link cvc \endlink
+/// mostly used by a \link colvar::cvc \endlink
 ///
 /// This class may be used to keep atomic data such as id, mass,
 /// position and collective variable derivatives) altogether.
@@ -56,7 +56,7 @@ public:
   /// from the \link colvarvalue \endlink class), which is also the
   /// most frequent case. For more complex types of \link
   /// colvarvalue \endlink objects, atomic gradients should be
-  /// defined within the specific \link cvc \endlink
+  /// defined within the specific \link colvar::cvc \endlink
   /// implementation
   cvm::rvector   grad;
 
@@ -144,7 +144,7 @@ public:
 
 
 /// \brief Group of \link atom \endlink objects, mostly used by a
-/// \link cvc \endlink object to gather all atomic data
+/// \link colvar::cvc \endlink object to gather all atomic data
 class colvarmodule::atom_group
   : public colvarparse, public colvardeps
 {
@@ -172,6 +172,9 @@ public:
 
   /// \brief Set default values for common flags
   int init();
+
+  /// \brief Initialize dependency tree
+  virtual int init_dependencies();
 
   /// \brief Update data required to calculate cvc's
   int setup();
@@ -426,18 +429,30 @@ public:
   /// \brief Calculate the center of mass of the atomic positions, assuming that
   /// they are already pbc-wrapped
   int calc_center_of_mass();
+
 private:
+
   /// \brief Center of mass
   cvm::atom_pos com;
+
   /// \brief The derivative of a scalar variable with respect to the COM
   // TODO for scalable calculations of more complex variables (e.g. rotation),
   // use a colvarvalue of vectors to hold the entire derivative
   cvm::rvector scalar_com_gradient;
+
 public:
-  /// \brief Return the center of mass of the atomic positions
+
+  /// \brief Return the center of mass (COM) of the atomic positions
   inline cvm::atom_pos center_of_mass() const
   {
     return com;
+  }
+
+  /// \brief Return previously gradient of scalar variable with respect to the
+  /// COM
+  inline cvm::rvector center_of_mass_scalar_gradient() const
+  {
+    return scalar_com_gradient;
   }
 
   /// \brief Return a copy of the current atom positions, shifted by a constant vector

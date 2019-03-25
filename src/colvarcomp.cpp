@@ -13,7 +13,8 @@ colvar::cvc::cvc()
     b_periodic(false),
     b_try_scalable(true)
 {
-  init_cvc_requires();
+  description = "uninitialized colvar component";
+  init_dependencies();
   sup_coeff = 1.0;
   period = 0.0;
   wrap_center = 0.0;
@@ -26,7 +27,8 @@ colvar::cvc::cvc(std::string const &conf)
     b_periodic(false),
     b_try_scalable(true)
 {
-  init_cvc_requires();
+  description = "uninitialized colvar component";
+  init_dependencies();
   sup_coeff = 1.0;
   period = 0.0;
   wrap_center = 0.0;
@@ -169,6 +171,100 @@ cvm::atom_group *colvar::cvc::parse_group(std::string const &conf,
 }
 
 
+int colvar::cvc::init_dependencies() {
+  size_t i;
+  // Initialize static array once and for all
+  if (features().size() == 0) {
+    for (i = 0; i < colvardeps::f_cvc_ntot; i++) {
+      modify_features().push_back(new feature);
+    }
+
+    init_feature(f_cvc_active, "active", f_type_dynamic);
+//     The dependency below may become useful if we use dynamic atom groups
+//     require_feature_children(f_cvc_active, f_ag_active);
+
+    init_feature(f_cvc_scalar, "scalar", f_type_static);
+
+    init_feature(f_cvc_gradient, "gradient", f_type_dynamic);
+
+    init_feature(f_cvc_explicit_gradient, "explicit gradient", f_type_static);
+    require_feature_children(f_cvc_explicit_gradient, f_ag_explicit_gradient);
+
+    init_feature(f_cvc_inv_gradient, "inverse gradient", f_type_dynamic);
+    require_feature_self(f_cvc_inv_gradient, f_cvc_gradient);
+
+    init_feature(f_cvc_debug_gradient, "debug gradient", f_type_user);
+    require_feature_self(f_cvc_debug_gradient, f_cvc_gradient);
+    require_feature_self(f_cvc_debug_gradient, f_cvc_explicit_gradient);
+
+    init_feature(f_cvc_Jacobian, "Jacobian derivative", f_type_dynamic);
+    require_feature_self(f_cvc_Jacobian, f_cvc_inv_gradient);
+
+    init_feature(f_cvc_com_based, "depends on group centers of mass", f_type_static);
+
+    init_feature(f_cvc_pbc_minimum_image, "use minimum-image distances with PBCs", f_type_user);
+
+    // Compute total force on first site only to avoid unwanted
+    // coupling to other colvars (see e.g. Ciccotti et al., 2005)
+    init_feature(f_cvc_one_site_total_force, "compute total force from one group", f_type_user);
+    require_feature_self(f_cvc_one_site_total_force, f_cvc_com_based);
+
+    init_feature(f_cvc_scalable, "scalable calculation", f_type_static);
+    require_feature_self(f_cvc_scalable, f_cvc_scalable_com);
+
+    init_feature(f_cvc_scalable_com, "scalable calculation of centers of mass", f_type_static);
+    require_feature_self(f_cvc_scalable_com, f_cvc_com_based);
+
+
+    // TODO only enable this when f_ag_scalable can be turned on for a pre-initialized group
+    // require_feature_children(f_cvc_scalable, f_ag_scalable);
+    // require_feature_children(f_cvc_scalable_com, f_ag_scalable_com);
+
+    // check that everything is initialized
+    for (i = 0; i < colvardeps::f_cvc_ntot; i++) {
+      if (is_not_set(i)) {
+        cvm::error("Uninitialized feature " + cvm::to_str(i) + " in " + description);
+      }
+    }
+  }
+
+  // Initialize feature_states for each instance
+  // default as available, not enabled
+  // except dynamic features which default as unavailable
+  feature_states.reserve(f_cvc_ntot);
+  for (i = 0; i < colvardeps::f_cvc_ntot; i++) {
+    bool avail = is_dynamic(i) ? false : true;
+    feature_states.push_back(feature_state(avail, false));
+  }
+
+  // Features that are implemented by all cvcs by default
+  // Each cvc specifies what other features are available
+  feature_states[f_cvc_active].available = true;
+  feature_states[f_cvc_gradient].available = true;
+
+  // CVCs are enabled from the start - get disabled based on flags
+  enable(f_cvc_active);
+  // feature_states[f_cvc_active].enabled = true;
+
+  // Explicit gradients are implemented in mosts CVCs. Exceptions must be specified explicitly.
+  // feature_states[f_cvc_explicit_gradient].enabled = true;
+  enable(f_cvc_explicit_gradient);
+
+  // Use minimum-image distances by default
+  // feature_states[f_cvc_pbc_minimum_image].enabled = true;
+  enable(f_cvc_pbc_minimum_image);
+
+  // Features that are implemented by default if their requirements are
+  feature_states[f_cvc_one_site_total_force].available = true;
+
+  // Features That are implemented only for certain simulation engine configurations
+  feature_states[f_cvc_scalable_com].available = (cvm::proxy->scalable_group_coms() == COLVARS_OK);
+  feature_states[f_cvc_scalable].available = feature_states[f_cvc_scalable_com].available;
+
+  return COLVARS_OK;
+}
+
+
 int colvar::cvc::setup()
 {
   description = "cvc " + name;
@@ -184,6 +280,7 @@ colvar::cvc::~cvc()
     if (atom_groups[i] != NULL) delete atom_groups[i];
   }
 }
+
 
 void colvar::cvc::read_data()
 {
@@ -204,6 +301,24 @@ void colvar::cvc::read_data()
 //       }
 //     }
 //   }
+}
+
+
+std::vector<std::vector<int> > colvar::cvc::get_atom_lists()
+{
+  std::vector<std::vector<int> > lists;
+
+  std::vector<cvm::atom_group *>::iterator agi = atom_groups.begin();
+  for ( ; agi != atom_groups.end(); ++agi) {
+    (*agi)->create_sorted_ids();
+    lists.push_back((*agi)->sorted_ids());
+    if ((*agi)->is_enabled(f_ag_fitting_group) && (*agi)->is_enabled(f_ag_fit_gradients)) {
+      cvm::atom_group &fg = *((*agi)->fitting_group);
+      fg.create_sorted_ids();
+      lists.push_back(fg.sorted_ids());
+    }
+  }
+  return lists;
 }
 
 

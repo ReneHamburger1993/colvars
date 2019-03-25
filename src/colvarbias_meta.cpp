@@ -31,6 +31,8 @@ colvarbias_meta::colvarbias_meta(char const *key)
   new_hills_begin = hills.end();
   hills_traj_os = NULL;
   replica_hills_os = NULL;
+
+  ebmeta_equil_steps = 0L;
 }
 
 
@@ -193,6 +195,7 @@ int colvarbias_meta::init_ebmeta_params(std::string const &conf)
     }
     target_dist = new colvar_grid_scalar();
     target_dist->init_from_colvars(colvars);
+    std::string target_dist_file;
     get_keyval(conf, "targetdistfile", target_dist_file);
     std::ifstream targetdiststream(target_dist_file.c_str());
     target_dist->read_multicol(targetdiststream);
@@ -215,7 +218,7 @@ int colvarbias_meta::init_ebmeta_params(std::string const &conf)
     target_dist->multiply_constant(1.0/target_dist->integral());
     cvm::real volume = cvm::exp(target_dist->entropy());
     target_dist->multiply_constant(volume);
-    get_keyval(conf, "ebMetaEquilSteps", ebmeta_equil_steps, 0);
+    get_keyval(conf, "ebMetaEquilSteps", ebmeta_equil_steps, ebmeta_equil_steps);
   }
 
   return COLVARS_OK;
@@ -484,9 +487,9 @@ int colvarbias_meta::update_bias()
 
     if (ebmeta) {
       hills_scale *= 1.0/target_dist->value(target_dist->get_colvars_index());
-      if(cvm::step_absolute() <= long(ebmeta_equil_steps)) {
+      if(cvm::step_absolute() <= ebmeta_equil_steps) {
         cvm::real const hills_lambda =
-          (cvm::real(long(ebmeta_equil_steps) - cvm::step_absolute())) /
+          (cvm::real(ebmeta_equil_steps - cvm::step_absolute())) /
           (cvm::real(ebmeta_equil_steps));
         hills_scale = hills_lambda + (1-hills_lambda)*hills_scale;
       }
@@ -1419,8 +1422,8 @@ std::istream & colvarbias_meta::read_hill(std::istream &is)
     return is;
   }
 
-  size_t h_it;
-  get_keyval(data, "step", h_it, 0, parse_silent);
+  cvm::step_number h_it;
+  get_keyval(data, "step", h_it, 0L, parse_silent);
   if (h_it <= state_file_step) {
     if (cvm::debug())
       cvm::log("Skipping a hill older than the state file for metadynamics bias \""+

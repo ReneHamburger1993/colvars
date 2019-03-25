@@ -89,6 +89,9 @@ public:
   /// \brief Parse config string and (re)initialize
   virtual int init(std::string const &conf);
 
+  /// \brief Initialize dependency tree
+  virtual int init_dependencies();
+
   /// \brief Set to zero all mutable data
   virtual int reset();
 
@@ -213,7 +216,7 @@ protected:
   bool                     has_data;
 
   /// \brief Step number read from the last state file
-  size_t                   state_file_step;
+  cvm::step_number         state_file_step;
 
 };
 
