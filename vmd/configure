@@ -420,7 +420,7 @@ $def_title="ON";
 $def_imageviewer="display %s";
 
 # program version number
-$progversion="1.9.4a29";
+$progversion="1.9.4a38";
 
 # text prompt string
 $promptstring="vmd > ";
@@ -483,7 +483,7 @@ $arch_rcflags     = "No resource compiler required on this platform.";
 
 $arch_cc          = "cc";
 $arch_ccpp        = "CC";
-$arch_nvcc        = "/usr/local/cuda-9.0/bin/nvcc";
+$arch_nvcc        = "/usr/local/cuda-10.0/bin/nvcc";
 $arch_nvccflags   = "-lineinfo --ptxas-options=-v " . 
                     "-gencode arch=compute_30,code=compute_30 " .
                     "-gencode arch=compute_30,code=sm_35 " .
@@ -494,6 +494,7 @@ $arch_nvccflags   = "-lineinfo --ptxas-options=-v " .
                     "-gencode arch=compute_60,code=sm_60 " .
                     "-gencode arch=compute_70,code=compute_70 " .
                     "-gencode arch=compute_70,code=sm_70 " .
+                    "-gencode arch=compute_75,code=sm_75 " .
                     "--ftz=true ";
 $arch_gcc         = "gcc";
 $arch_gccpp       = "g++";
@@ -930,7 +931,7 @@ $avx512_libs        = "";
 #   This option enables the use of CUDA GPU acceleration functions.
 #######################
 $cuda_defines     = "-DVMDCUDA -DMSMPOT_CUDA";
-$cuda_dir         = "/usr/local/cuda-9.0";
+$cuda_dir         = "/usr/local/cuda-10.0";
 $cuda_include     = "";
 $cuda_library     = "";
 $cuda_libs        = "-Wl,-rpath -Wl,\$\$ORIGIN/ -lcudart_static -lrt";
@@ -947,6 +948,7 @@ $cuda_libs        = "-Wl,-rpath -Wl,\$\$ORIGIN/ -lcudart_static -lrt";
                      'CUDAMDFF.cu',
                      'CUDAMeasureRDF.cu',
                      'CUDAMeasureQCP.cu',
+                     'CUDAWrapNVML.cu',
                      'CUDAOrbital.cu',
                      'CUDAParPrefixOps.cu',
                      'CUDAQuickSurf.cu',
@@ -1479,7 +1481,7 @@ $python_libs        = "-lpython2.5 -lpthread";
                        'VMDTkinterMenu.C',
 		       'py_animate.C',
 		       'py_atomsel.C',
-		       'py_atomselection.C',
+		       'py_selection.C',
 		       'py_axes.C',
 		       'py_color.C',
 		       'py_commands.C',
@@ -1540,6 +1542,7 @@ $vmd_libs          = "$tcl_libs";
                    'msmpot_setup.c',
                    'vmdsock.c',
                    'vmddlopen.c',
+                   'vmdfsinfo.c',
                    'pcre.c',
                    'fitrms.c',
                    @tcl_cc,
@@ -2379,7 +2382,7 @@ if ($config_arch eq "LINUXAMD64") {
 
     if ($config_cuda) {
       $arch_nvccflags   .= " --machine 64 -O3 $cuda_include";
-      $cuda_library     = "-L/usr/local/cuda-9.0/lib64";
+      $cuda_library     = "-L/usr/local/cuda-10.0/lib64";
     }
 
     $arch_lex		= "flex"; # has problems with vendor lex

@@ -1,5 +1,12 @@
 // -*- c++ -*-
 
+// This file is part of the Collective Variables module (Colvars).
+// The original version of Colvars and its updates are located at:
+// https://github.com/Colvars/colvars
+// Please update all Colvars source files before making any changes.
+// If you wish to distribute your changes, please submit them to the
+// Colvars repository at GitHub.
+
 #include <errno.h>
 
 #include "common.h"
@@ -17,6 +24,10 @@
 #include <tcl.h>
 #endif
 
+// For replica exchange
+#include "converse.h"
+#include "DataExchanger.h"
+
 #include "colvarmodule.h"
 #include "colvaratoms.h"
 #include "colvarproxy.h"
@@ -31,6 +42,8 @@ colvarproxy_namd::colvarproxy_namd()
   first_timestep = true;
   total_force_requested = false;
   requestTotalForce(total_force_requested);
+
+  angstrom_value = 1.;
 
   // initialize pointers to NAMD configuration data
   simparams = Node::Object()->simParameters;
@@ -699,8 +712,13 @@ cvm::rvector colvarproxy_namd::position_distance(cvm::atom_pos const &pos1,
   Position const p1(pos1.x, pos1.y, pos1.z);
   Position const p2(pos2.x, pos2.y, pos2.z);
   // return p2 - p1
-  Vector const d = this->lattice->delta(p2, p1);
-  return cvm::rvector(d.x, d.y, d.z);
+  if (this->lattice != NULL) {
+    Vector const d = this->lattice->delta(p2, p1);
+    return cvm::rvector(d.x, d.y, d.z);
+  }
+  else {
+    return colvarproxy_system::position_distance(pos1, pos2);
+  }
 }
 
 
@@ -929,25 +947,22 @@ std::ostream * colvarproxy_namd::output_stream(std::string const &output_name,
   if (cvm::debug()) {
     cvm::log("Using colvarproxy_namd::output_stream()\n");
   }
-  std::list<std::ostream *>::iterator osi  = output_files.begin();
-  std::list<std::string>::iterator    osni = output_stream_names.begin();
-  for ( ; osi != output_files.end(); osi++, osni++) {
-    if (*osni == output_name) {
-      return *osi;
-    }
-  }
+
+  std::ostream *os = get_output_stream(output_name);
+  if (os != NULL) return os;
+
   if (!(mode & (std::ios_base::app | std::ios_base::ate))) {
     colvarproxy::backup_file(output_name);
   }
-  ofstream_namd *os = new ofstream_namd(output_name.c_str(), mode);
-  if (!os->is_open()) {
+  ofstream_namd *osf = new ofstream_namd(output_name.c_str(), mode);
+  if (!osf->is_open()) {
     cvm::error("Error: cannot write to file \""+output_name+"\".\n",
                FILE_ERROR);
     return NULL;
   }
   output_stream_names.push_back(output_name);
-  output_files.push_back(os);
-  return os;
+  output_files.push_back(osf);
+  return osf;
 }
 
 
@@ -1138,6 +1153,16 @@ int colvarproxy_namd::update_group_properties(int index)
 }
 
 
+int colvarproxy_namd::set_unit_system(std::string const &units_in, bool /*check_only*/)
+{
+  if (units_in != "real") {
+    cvm::error("Error: Specified unit system \"" + units_in + "\" is unsupported in NAMD. Supported units are \"real\" (A, kcal/mol).\n");
+    return COLVARS_ERROR;
+  }
+  return COLVARS_OK;
+}
+
+
 #if CMK_SMP && USE_CKLOOP // SMP only
 
 void calc_colvars_items_smp(int first, int last, void *result, int paramNum, void *param)
@@ -1223,3 +1248,50 @@ int colvarproxy_namd::smp_biases_script_loop()
 }
 
 #endif  // #if CMK_SMP && USE_CKLOOP
+
+
+int colvarproxy_namd::replica_enabled() {
+#if CMK_HAS_PARTITION
+  return COLVARS_OK;
+#else
+  return COLVARS_NOT_IMPLEMENTED;
+#endif
+}
+
+
+int colvarproxy_namd::replica_index() {
+  return CmiMyPartition();
+}
+
+
+int colvarproxy_namd::replica_num() {
+  return CmiNumPartitions();
+}
+
+
+void colvarproxy_namd::replica_comm_barrier() {
+  replica_barrier();
+}
+
+
+int colvarproxy_namd::replica_comm_recv(char* msg_data, int buf_len,
+                                        int src_rep) {
+  DataMessage *recvMsg = NULL;
+  replica_recv(&recvMsg, src_rep, CkMyPe());
+  CmiAssert(recvMsg != NULL);
+  int retval = recvMsg->size;
+  if (buf_len >= retval) {
+    memcpy(msg_data,recvMsg->data,retval);
+  } else {
+    retval = 0;
+  }
+  CmiFree(recvMsg);
+  return retval;
+}
+
+
+int colvarproxy_namd::replica_comm_send(char* msg_data, int msg_len,
+                                        int dest_rep) {
+  replica_send(msg_data, msg_len, dest_rep, CkMyPe());
+  return msg_len;
+}

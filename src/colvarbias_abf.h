@@ -1,5 +1,12 @@
 // -*- c++ -*-
 
+// This file is part of the Collective Variables module (Colvars).
+// The original version of Colvars and its updates are located at:
+// https://github.com/Colvars/colvars
+// Please update all Colvars source files before making any changes.
+// If you wish to distribute your changes, please submit them to the
+// Colvars repository at GitHub.
+
 #ifndef COLVARBIAS_ABF_H
 #define COLVARBIAS_ABF_H
 
@@ -67,11 +74,11 @@ private:
   /// Frequency for updating pABF PMF (if zero, pABF is not used)
   int   pabf_freq;
   /// Max number of CG iterations for integrating PMF at startup and for file output
-  int       integrate_initial_steps;
+  int       integrate_initial_iterations;
   /// Tolerance for integrating PMF at startup and for file output
   cvm::real integrate_initial_tol;
   /// Max number of CG iterations for integrating PMF at on-the-fly pABF updates
-  int       integrate_steps;
+  int       integrate_iterations;
   /// Tolerance for integrating PMF at on-the-fly pABF updates
   cvm::real integrate_tol;
 
@@ -152,7 +159,9 @@ private:
   virtual std::istream& read_state_data(std::istream&);
   virtual std::ostream& write_state_data(std::ostream&);
   virtual int write_output_files();
+
+  /// Calculate the bias energy for 1D ABF
+  virtual int calc_energy(std::vector<colvarvalue> const *values);
 };
 
 #endif
-

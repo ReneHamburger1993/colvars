@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # -*- sh-basic-offset: 2; sh-indentation: 2; -*-
 
 # Script to update a NAMD, VMD, or LAMMPS source tree with the latest Colvars
@@ -18,7 +18,7 @@ then
         (default: create diff files for inspection --- MD code may be different)
 
    <target source tree> = root directory of the MD code sources
-   supported MD codes: NAMD, VMD, LAMMPS
+   supported codes: NAMD, VMD, VMD PLUGINS, LAMMPS
 
 EOF
    exit 1
@@ -50,9 +50,6 @@ fi
 # Infer source path from name of script
 source=$(dirname "$0")
 
-cpp_patch=${source}/devel-tools/update-header-cpp.patch
-tex_patch=${source}/devel-tools/update-header-tex.patch
-
 # Check general validity of target path
 target="$1"
 if [ ! -d "${target}" ]
@@ -77,6 +74,9 @@ then
 elif [ -f "${target}/src/VMDApp.h" ]
 then
   code="VMD"
+elif [ -f "${target}/include/molfile_plugin.h" ]
+then
+  code="VMD-PLUGINS"
 elif [ -f "${target}/src/gromacs/commandline.h" ]
 then
   code="GROMACS"
@@ -118,18 +118,6 @@ condcopy() {
     PATCH_OPT=""
   fi
 
-  TMPFILE=`mktemp`
-
-  # If a patch file is available, apply it to the source file
-  # (reversed if necessary)
-  if [ "x$3" != "x" ] ; then
-    if [ -f "$3" ] ; then
-      patch $PATCH_OPT < $3 $a -o $TMPFILE > /dev/null
-      # Patched file is new source
-      a=$TMPFILE
-    fi
-  fi
-
   updated_file=0
 
   if [ -d $(dirname "$b") ]
@@ -145,8 +133,6 @@ condcopy() {
       echo -n '.'
     fi
   fi
-
-  rm -f $TMPFILE
 }
 
 
@@ -183,14 +169,11 @@ then
   for src in ${source}/src/*.h ${source}/src/*.cpp
   do \
     tgt=$(basename ${src})
-    condcopy "${src}" "${target}/lib/colvars/${tgt}" "${cpp_patch}"
+    condcopy "${src}" "${target}/lib/colvars/${tgt}"
   done
 
   # Update makefiles for library
-  for src in \
-    ${source}/lammps/lib/colvars/Makefile.* \
-    ${source}/lammps/lib/colvars/Install.py \
-    ${source}/lammps/lib/colvars/README
+  for src in ${source}/lammps/lib/colvars/Makefile.{common,deps}
   do \
     tgt=$(basename ${src})
     condcopy "${src}" "${target}/lib/colvars/${tgt}"
@@ -207,29 +190,12 @@ then
                ${source}/lammps/src/USER-COLVARS/fix_colvars.h
     do \
       tgt=$(basename ${src})
-      condcopy "${src}" "${target}/src/USER-COLVARS/${tgt}" "${cpp_patch}"
-    done
-    for src in ${source}/lammps/src/USER-COLVARS/Install.sh \
-               ${source}/lammps/src/USER-COLVARS/group_ndx.cpp \
-               ${source}/lammps/src/USER-COLVARS/group_ndx.h \
-               ${source}/lammps/src/USER-COLVARS/ndx_group.cpp \
-               ${source}/lammps/src/USER-COLVARS/ndx_group.h \
-               ${source}/lammps/src/USER-COLVARS/README
-    do \
-      tgt=$(basename ${src})
       condcopy "${src}" "${target}/src/USER-COLVARS/${tgt}"
     done
   else
     echo "ERROR: Support for the new pRNG (old LAMMPS-ICMS branch) is currently disabled."
     exit 2
   fi
-
-  # Update documentation of LAMMPS fix
-  for src in ${source}/lammps/doc/src/*.txt
-    do \
-      tgt=$(basename ${src})
-    condcopy "${src}" "${target}/doc/src/${tgt}"
-  done
 
   downloaded_pdf=0
   # Copy PDF of the user manual
@@ -275,39 +241,25 @@ fi
 if [ ${code} = "NAMD" ]
 then
 
-  if [ ! -d ${target}/colvars ] ; then
-    # Old layout: copy library files to the "src" folder
-    echo ""
-    if [ $force_update = 1 ] ; then
-      echo "Creating folder containing Colvars library files"
-      mkdir ${target}/colvars
-      mkdir ${target}/colvars/src
-      rm -f ${target}/src/colvar*
-    else
-      echo "Error: Colvars files are now stored in a separate folder."
-      echo "Please upgrade to the latest NAMD version (supported), "
-      echo "or use the -f flag (unsupported)."
-      exit 1
-    fi
-  fi
-  
   # New layout: copy library files to the "colvars" folder
   for src in ${source}/src/*.h ${source}/src/*.cpp
   do \
     tgt=$(basename ${src})
-    condcopy "${src}" "${target}/colvars/src/${tgt}" "${cpp_patch}"
+    condcopy "${src}" "${target}/colvars/src/${tgt}"
   done
   condcopy "${source}/namd/colvars/src/Makefile.namd" \
            "${target}/colvars/src/Makefile.namd"
   if [ $updated_file = 1 ] ; then
     updated_makefile=1
   fi
+  condcopy "${source}/namd/colvars/Make.depends" \
+           "${target}/colvars/Make.depends"
 
-  # Update abf_integrate
+  # Update abf_integrate
   for src in ${source}/colvartools/*h ${source}/colvartools/*cpp
   do \
     tgt=$(basename ${src})
-    condcopy "${src}" "${target}/lib/abf_integrate/${tgt}" "${cpp_patch}"
+    condcopy "${src}" "${target}/lib/abf_integrate/${tgt}"
   done
   condcopy "${source}/colvartools/Makefile" \
            "${target}/lib/abf_integrate/Makefile"
@@ -319,16 +271,16 @@ then
       ${source}/namd/src/colvarproxy_namd.C
   do \
     tgt=$(basename ${src})
-    condcopy "${src}" "${target}/src/${tgt}" "${cpp_patch}"
+    condcopy "${src}" "${target}/src/${tgt}"
   done
 
   # Copy doc files
   condcopy "${source}/doc/colvars-refman.bib" \
            "${target}/ug/ug_colvars.bib"
   condcopy "${source}/doc/colvars-refman-main.tex" \
-           "${target}/ug/ug_colvars.tex" "${tex_patch}"
+           "${target}/ug/ug_colvars.tex"
   condcopy "${source}/namd/ug/ug_colvars_macros.tex" \
-           "${target}/ug/ug_colvars_macros.tex" "${tex_patch}"
+           "${target}/ug/ug_colvars_macros.tex"
   condcopy "${source}/doc/colvars_diagram.pdf" \
            "${target}/ug/figures/colvars_diagram.pdf"
   condcopy "${source}/doc/colvars_diagram.eps" \
@@ -357,6 +309,18 @@ then
     fi
   done
 
+  # One last check that each file is correctly included in the dependencies
+  for file in ${target}/colvars/src/*.{cpp,h} ; do
+    if [ ! -f ${target}/colvars/Make.depends ] || \
+       [ ! -f ${target}/lepton/Make.depends ] ; then
+      updated_makefile=1
+      break
+    fi
+    if ! grep -q ${file} ${target}/colvars/Make.depends ; then
+      updated_makefile=1
+    fi
+  done
+
   if [ $updated_makefile = 1 ] ; then
     echo ""
     echo "  *************************************************"
@@ -376,21 +340,21 @@ then
   for src in ${source}/src/*.h
   do \
     tgt=$(basename ${src})
-    condcopy "${src}" "${target}/src/${tgt}" "${cpp_patch}"
+    condcopy "${src}" "${target}/src/${tgt}"
   done
   # Update code-independent sources
   for src in ${source}/src/*.cpp
   do \
     tgt=$(basename ${src%.cpp})
-    condcopy "${src}" "${target}/src/${tgt}.C" "${cpp_patch}"
+    condcopy "${src}" "${target}/src/${tgt}.C"
   done
 
   condcopy "${source}/doc/colvars-refman.bib" \
            "${target}/doc/ug_colvars.bib"
   condcopy "${source}/doc/colvars-refman-main.tex" \
-           "${target}/doc/ug_colvars.tex" "${tex_patch}"
+           "${target}/doc/ug_colvars.tex"
   condcopy "${source}/vmd/doc/ug_colvars_macros.tex" \
-           "${target}/doc/ug_colvars_macros.tex" "${tex_patch}"
+           "${target}/doc/ug_colvars_macros.tex"
   condcopy "${source}/doc/colvars_diagram.pdf" \
            "${target}/doc/pictures/colvars_diagram.pdf"
   condcopy "${source}/doc/colvars_diagram.eps" \
@@ -403,7 +367,7 @@ then
       ${source}/vmd/src/colvarproxy_vmd.C  
   do \
     tgt=$(basename ${src})
-    condcopy "${src}" "${target}/src/${tgt}" "${cpp_patch}"
+    condcopy "${src}" "${target}/src/${tgt}"
   done
 
   condcopy "${source}/vmd/src/colvars_files.pl" "${target}/src/colvars_files.pl"
@@ -425,6 +389,28 @@ then
   exit 0
 fi
 
+
+# Update VMD plugins tree
+if [ ${code} = "VMD-PLUGINS" ]
+then
+
+  # Use the Dashboard's Makefile to patch the plugin tree
+  if pushd ${source}/vmd/cv_dashboard > /dev/null ; then
+    DASHBOARD_VERSION=$(grep ^VERSION Makefile.local | cut -d' ' -f 3)
+    if [ -d ${target}/noarch ] ; then
+      # This is an already-installed plugin tree
+      DASHBOARD_DESTINATION=${target}/noarch/tcl/cv_dashboard${DASHBOARD_VERSION}
+    else
+      # This is the source tree
+      DASHBOARD_DESTINATION=${target}/cv_dashboard
+    fi
+    DESTINATION=${DASHBOARD_DESTINATION} \
+      make --quiet -f Makefile.local > /dev/null
+    echo -n '......'
+    popd > /dev/null
+  fi
+  echo ' done.'
+fi
 
 # Update GROMACS tree
 if [ ${code} = "GROMACS" ]

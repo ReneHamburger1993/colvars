@@ -11,14 +11,21 @@ proc ::cv_dashboard::add {} {
 
 # Colvar config editor window
 proc ::cv_dashboard::edit { {add false} } {
-  set cfg ""
+  # If a non-default unit system is in use, recall it in the config string
+  refresh_units
+  if { $::cv_dashboard::units == "" } {
+    set cfg ""
+  } else {
+    set cfg "units $::cv_dashboard::units\n\n"
+  }
 
   if $add {
     # do not remove existing vars
     set cvs {}
+    set ::cv_dashboard::backup_cfg ""
     if { [info exists ::cv_dashboard::template_base_dir] } {
       # Open "official" colvar template
-      set in [open ${::cv_dashboard::template_base_dir}/colvar.in r]
+      set in [open ${::cv_dashboard::template_base_dir}/colvar/basic_colvar.in r]
       set cfg [read $in]
       close $in
     } else {
@@ -33,9 +40,7 @@ proc ::cv_dashboard::edit { {add false} } {
       set cvs $::cv_dashboard::cvs
     }
     foreach c $cvs {
-      append cfg "colvar {"
-      append cfg [run_cv colvar $c getconfig]
-      append cfg "}\n\n"
+      append cfg "colvar {[get_config $c]}\n\n"
     }
     set ::cv_dashboard::backup_cfg $cfg
   }
@@ -65,22 +70,46 @@ proc ::cv_dashboard::edit { {add false} } {
   grid columnconfigure $docs 1 -weight 1
   grid columnconfigure $docs 2 -weight 1
 
+  ############# Templates #########################################
+  labelframe  $w.editor.fl.templates -bd 2 -text "Templates" -padx 2 -pady 2
+  set templates $w.editor.fl.templates
+
+  # One line per subdirectory
+  foreach d { colvar component other } {
+    set ::cv_dashboard::templates_$d [dict create]
+
+    foreach f [lsort -dictionary [glob -nocomplain "${::cv_dashboard::template_dir}/$d/*.in"]] {
+      # Map pretty template name to file name
+      dict set ::cv_dashboard::templates_$d [regsub -all {_} [file rootname [file tail $f]] " "] $f
+    }
+    tk::label $templates.template_label_$d -text "$d templates:"
+    ttk::combobox $templates.pick_template_$d -justify left -state readonly
+    $templates.pick_template_$d configure -values [dict keys [set ::cv_dashboard::templates_$d]]
+    bind $templates.pick_template_$d <<keyb_enter>> \
+      "::cv_dashboard::insert_template $templates.pick_template_$d [list [set ::cv_dashboard::templates_$d]]"
+    ttk::button $templates.insert_template_$d -text "Insert \[Enter\]" \
+      -command "::cv_dashboard::insert_template $templates.pick_template_$d [list [set ::cv_dashboard::templates_$d]]" \
+      -padding "2 0 2 0"
+
+    grid $templates.template_label_$d -row $gridrow -column 0 -pady 2 -padx 2
+    grid $templates.pick_template_$d -row $gridrow -sticky ew -column 1 -pady 2 -padx 2
+    grid $templates.insert_template_$d -row $gridrow -column 2 -pady 2 -padx 2
+    incr gridrow
+  }
+
+  grid columnconfigure $templates 0 -weight 0
+  grid columnconfigure $templates 1 -weight 1
+  grid columnconfigure $templates 2 -weight 0
+
+  ############# Various helpers ###################################
   labelframe  $w.editor.fl.helpers -bd 2 -text "Editing helpers" -padx 2 -pady 2
   set helpers $w.editor.fl.helpers
-  ############# Templates #########################################
-  tk::label $helpers.template_label -text "Insert template:"
-  ttk::button $helpers.insert_template -text "Pick template file" \
-    -command [list ::cv_dashboard::insert_template] -padding "2 0 2 0"
-
-  grid $helpers.template_label -row $gridrow -column 0 -pady 2 -padx 2
-  grid $helpers.insert_template -row $gridrow -column 1 -columnspan 2 -sticky ew -pady 2 -padx 2
-  incr gridrow
 
   ############# Atoms from seltext ################################
   tk::label $helpers.seltext_label -text "Atoms from selection text:"
   tk::entry $helpers.seltext -bg white
   # Bind Return key in seltext entry to proc creating the atomNumbers line
-  bind $helpers.seltext <Return> "::cv_dashboard::atoms_from_sel textbox"
+  bind $helpers.seltext <<keyb_enter>> "::cv_dashboard::atoms_from_sel textbox"
   ttk::button $helpers.fromsel -text "Insert \[Enter\]" \
     -command "::cv_dashboard::atoms_from_sel textbox" -padding "2 0 2 0"
 
@@ -96,7 +125,7 @@ proc ::cv_dashboard::edit { {add false} } {
   bind $helpers.reps <<ComboboxSelected>> "::cv_dashboard::atoms_from_sel reps"
 
   grid $helpers.rep_label -row $gridrow -column 0 -pady 2 -padx 2
-  grid $helpers.reps -row $gridrow -column 1 -pady 2 -padx 2 -sticky nsew
+  grid $helpers.reps -row $gridrow -column 1 -pady 2 -padx 2 -sticky ew
   grid $helpers.refresh_reps -row $gridrow -column 2 -pady 2 -padx 2
   incr gridrow
 
@@ -110,9 +139,9 @@ proc ::cv_dashboard::edit { {add false} } {
   $helpers.labels configure -values [list Bonds Angles Dihedrals]
   $helpers.labels set Bonds
 
-  grid $helpers.labeled_atoms -row $gridrow -column 0 -pady 2 -padx 2 -sticky nsew
-  grid $helpers.labeled_var -row $gridrow -column 1 -pady 2 -padx 2 -sticky nsew
-  grid $helpers.labels -row $gridrow -column 2 -pady 2 -padx 2 -sticky nsew
+  grid $helpers.labeled_atoms -row $gridrow -column 0 -pady 2 -padx 2
+  grid $helpers.labeled_var -row $gridrow -column 1 -pady 2 -padx 2 -sticky ew
+  grid $helpers.labels -row $gridrow -column 2 -pady 2 -padx 2
   incr gridrow
 
   ################# Insert file name from file picker ###########################
@@ -126,11 +155,13 @@ proc ::cv_dashboard::edit { {add false} } {
   grid $helpers.insert_file -row $gridrow -column 2 -pady 2 -padx 2
   incr gridrow
 
-  grid columnconfigure $helpers 0 -weight 1
+  grid columnconfigure $helpers 0 -weight 0
   grid columnconfigure $helpers 1 -weight 1
-  grid columnconfigure $helpers 2 -weight 1
+  grid columnconfigure $helpers 2 -weight 0
 
+  # Layout of all frames
   grid $docs -sticky ew
+  grid $templates -sticky ew
   grid $helpers -sticky ew
   grid columnconfigure $w.editor.fl 0 -weight 1
 
@@ -146,11 +177,12 @@ proc ::cv_dashboard::edit { {add false} } {
 
   # Ctrl-s anywhere in the window saves/applies
   bind $w.editor <Control-s> ::cv_dashboard::edit_apply
-  # Custom bindings for the text widget
+  # Custom bindings for the text widget
   bind $w.editor.fr.text <Control-a> "$w.editor.fr.text tag add sel 1.0 end-1c; break"
   bind $w.editor.fr.text <Tab> ::cv_dashboard::tab_pressed
   # Bind several possible mappings for Shift-Tab
-  bind $w.editor.fr.text <ISO_Left_Tab> { ::cv_dashboard::tab_pressed true }
+  # ISO_Left_Tab is undefined on some platforms and will fail
+  catch { bind $w.editor.fr.text <ISO_Left_Tab> { ::cv_dashboard::tab_pressed true } }
   bind $w.editor.fr.text <Shift-Tab> { ::cv_dashboard::tab_pressed true }
 
   set gridrow 1
@@ -176,13 +208,14 @@ proc ::cv_dashboard::edit { {add false} } {
 
 proc ::cv_dashboard::tab_pressed { {shift false} } {
   set t .cv_dashboard_window.editor.fr.text
-
   set s [$t tag ranges sel]
+  set indent $::cv_dashboard::indent
+
   if { $s == "" } {
-    # No selection
+    # No selection
     if { $shift == false } {
       # Just insert spaces at cursor
-      $t insert insert "    "
+      $t insert insert $indent
       return -code break
     } else {
       # Select line of cursor
@@ -195,9 +228,9 @@ proc ::cv_dashboard::tab_pressed { {shift false} } {
 
   set current_sel [$t get {*}$s]
   if { $shift } {
-    regsub -all -lineanchor {^    } $current_sel "" new_sel
+    regsub -all -lineanchor "^${indent}" $current_sel "" new_sel
   } else {
-    regsub -all -lineanchor {^} $current_sel "    " new_sel
+    regsub -all -lineanchor "^" $current_sel $indent new_sel
   }
   $t replace {*}$s $new_sel sel
   return -code break
@@ -231,6 +264,8 @@ proc ::cv_dashboard::invokeBrowser {url} {
 # Insert atomNumbers command for given selection text
 proc ::cv_dashboard::atoms_from_sel { source } {
   set w .cv_dashboard_window
+  set indent ${::cv_dashboard::indent}
+  set indent3 "${indent}${indent}${indent}"
 
   # Called from textbox
   switch $source {
@@ -241,16 +276,22 @@ proc ::cv_dashboard::atoms_from_sel { source } {
   if {[llength $seltext] == 0 } {
     return
   }
-  set sel [atomselect top $seltext]
+  set sel [atomselect $::cv_dashboard::mol $seltext]
   set serials [$sel get serial]
   $sel delete
 
   if {[llength $serials] == 0 } {
     tk_messageBox -icon error -title "Colvars error" -parent .cv_dashboard_window\
-      -message "Selection text matches zero atoms"
+      -message "Selection text \"${seltext}\" matches zero atoms."
     return
   }
-  editor_replace "        # Selection: \"$seltext\"\n        atomNumbers $serials\n"
+  # set auto to "" if not requested
+  set auto " auto-updating"
+  # Insert magic comment line followed by atomNumbers line
+  editor_replace \
+"${indent3}# \"auto-updating\" keyword updates atom IDs when applying cfg or changing molecule
+${indent3}#$auto selection: \"$seltext\"
+${indent3}atomNumbers $serials\n"
 }
 
 
@@ -268,6 +309,9 @@ proc ::cv_dashboard::editor_replace { text } {
 # Insert atom numbers or components from currently labeled objects in VMD
 proc ::cv_dashboard::insert_labels {obj} {
   set w .cv_dashboard_window
+  set indent ${::cv_dashboard::indent}
+  set indent2 "${indent}${indent}"
+
   if {$obj == "combo"} {
     set obj [$w.editor.fl.helpers.labels get]
   }
@@ -275,12 +319,13 @@ proc ::cv_dashboard::insert_labels {obj} {
   if { $obj == "Atoms" } {
     set serials [list]
     foreach l [label list $obj] {
+      # Skip hidden labels
       if { [lindex $l 2] == "hide" } { continue }
       set a [lindex $l 0]
       lappend serials [expr [lindex $a 1] + 1] ;# going from VMD 0-based to 1-based atomNumbers
     }
     if {[llength $serials] > 0} {
-      editor_replace "        # Atom labels\n        atomNumbers $serials\n"
+      editor_replace "${indent2}# Atom labels\n${indent2}atomNumbers $serials\n"
     }
   } else {
     set n(Bonds) 2
@@ -290,34 +335,27 @@ proc ::cv_dashboard::insert_labels {obj} {
     set cvc(Angles) angle
     set cvc(Dihedrals) dihedral
     foreach l [label list $obj] {
+      # Skip hidden labels
       if { [lindex $l 2] == "hide" } { continue }
-      set cfg "    $cvc($obj) \{\n"
+      set cfg "${indent}$cvc($obj) \{\n"
       for {set i 0} { $i < $n($obj) } {incr i} {
         set a [lindex $l $i]
         set serial [expr [lindex $a 1] + 1]
-        append cfg "        group[expr $i+1] \{\n            atomNumbers $serial\n        \}\n"
+        append cfg "${indent2}group[expr $i+1] \{\n${indent2}${indent}atomNumbers $serial\n${indent2}\}\n"
       }
-      append cfg "    \}\n"
+      append cfg "${indent}\}\n"
       editor_replace $cfg
     }
   }
 }
 
+
 # Insert contents of template file
-proc ::cv_dashboard::insert_template {} {
-  set w .cv_dashboard_window
-  if { [info exists ::cv_dashboard::template_dir] } {
-    set path [tk_getOpenFile -initialdir $::cv_dashboard::template_dir]
-  } else {
-    set path [tk_getOpenFile -initialdir [pwd]]
-  }
-  if [string compare $path ""] {
-    # Save directory for next invocation of this dialog
-    set ::cv_dashboard::template_dir [file dirname $path]
-    set in [open $path r]
-    editor_replace [read $in]
-    close $in
-  }
+proc ::cv_dashboard::insert_template { source map } {
+  set path [dict get $map [$source get]]
+  set in [open $path r]
+  editor_replace [read $in]
+  close $in
 }
 
 
@@ -325,6 +363,8 @@ proc ::cv_dashboard::insert_template {} {
 proc ::cv_dashboard::insert_filename {} {
   variable ::cv_dashboard::filetype
   set w .cv_dashboard_window
+  set indent ${::cv_dashboard::indent}
+  set indent2 "${indent}${indent}"
 
   if { [info exists ::cv_dashboard::atomfile_dir] } {
     set path [tk_getOpenFile -filetypes {{"PDB" .pdb} {"XYZ" .xyz} {"All files" *}} \
@@ -336,7 +376,9 @@ proc ::cv_dashboard::insert_filename {} {
     # Save directory for next invocation of this dialog
     set ::cv_dashboard::atomfile_dir [file dirname $path]
     set coltype [string range $filetype 0 end-4]
-    editor_replace "        $filetype $path\n        # ${coltype}Col O\n        # ${coltype}ColValue 1\n"
+    editor_replace "${indent2}$filetype $path
+${indent2}# ${coltype}Col O
+${indent2}# ${coltype}ColValue 1\n"
   }
 }
 
@@ -348,19 +390,18 @@ proc ::cv_dashboard::edit_apply {} {
     run_cv colvar $c delete
   }
   set cfg [$w.editor.fr.text get 1.0 end-1c]
-  if { $cfg != "" } {
-    set res [run_cv config $cfg]
-    if { [string compare $res ""] } {
-      # error: restore backed up cfg
-      run_cv config $::cv_dashboard::backup_cfg
-      refresh_table
-      # Do not destroy editor window (give user a chance to fix input)
-      return
-    }
+  set res [apply_config $cfg]
+  if { [string compare $res ""] } {
+    # error: restore backed up cfg
+    # For extra graceful behavior, we could apply only the config of those colvars
+    # that are not there - excluding those that were successfully redefined
+    # for that, backup_cfg could be a name -> config map as used by apply_config
+    apply_config $::cv_dashboard::backup_cfg
+    # Do not destroy editor window (give user a chance to fix input)
+    return
   }
   set ::cv_dashboard::being_edited {}
   destroy $w.editor
-  refresh_table
 }
 
 
@@ -374,10 +415,10 @@ proc ::cv_dashboard::edit_cancel {} {
 
 proc ::cv_dashboard::refresh_reps {} {
   set w .cv_dashboard_window
-  set numreps [molinfo top get numreps]
+  set numreps [molinfo $::cv_dashboard::mol get numreps]
   set reps [list]
   for {set i 0} {$i < $numreps} {incr i} {
-    lappend reps [lindex [molinfo top get [list [list selection $i]]] 0]
+    lappend reps [lindex [molinfo $::cv_dashboard::mol get [list [list selection $i]]] 0]
   }
   $w.editor.fl.helpers.reps configure -values $reps
 }

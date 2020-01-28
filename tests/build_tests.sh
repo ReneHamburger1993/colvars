@@ -161,8 +161,9 @@ m4 -Dorientation=orientationProj < orientation-fitgroup.in > orientationproj-fit
 for colvar in \
     "angle" \
     "dihedral" \
-    "coordnum" "coordnum-pairlist" \
-    "coordnum-aniso" "groupcoord" "groupcoord-aniso" \
+    "coordnum" "coordnum-group2centeronly" "coordnum-pairlist" \
+    "coordnum-aniso" "coordnum-aniso-pairlist" \
+    "groupcoord" "groupcoord-aniso" \
     "dipoleangle" "dipolemagnitude" \
     "distancez" "distancez-fitgroup" \
     "distancez-axis" "distancez-axis-fitgroup" \
@@ -174,6 +175,7 @@ for colvar in \
     "inertia" \
     "inertiaz" \
     "rmsd" \
+    "eigenvector" \
     "tilt" \
     "spinangle" \
     "selfcoordnum" "selfcoordnum-pairlist" \
@@ -233,6 +235,11 @@ write_colvars_config ${colvar} ${bias} ${dirname}/test.in
 
 colvar="distancepairs"
 bias="linear-distancepairs"
+create_test_dir ${colvar}_${bias}
+write_colvars_config ${colvar} ${bias} ${dirname}/test.in
+
+colvar="distancepairs"
+bias="histogramrestraint-dp"
 create_test_dir ${colvar}_${bias}
 write_colvars_config ${colvar} ${bias} ${dirname}/test.in
 

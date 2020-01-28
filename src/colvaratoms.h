@@ -1,5 +1,12 @@
 // -*- c++ -*-
 
+// This file is part of the Collective Variables module (Colvars).
+// The original version of Colvars and its updates are located at:
+// https://github.com/Colvars/colvars
+// Please update all Colvars source files before making any changes.
+// If you wish to distribute your changes, please submit them to the
+// Colvars repository at GitHub.
+
 #ifndef COLVARATOMS_H
 #define COLVARATOMS_H
 
@@ -200,6 +207,12 @@ public:
   /// \brief Remove an atom object from this group
   int remove_atom(cvm::atom_iter ai);
 
+  /// Set this group as a dummy group (no actual atoms)
+  int set_dummy();
+
+  /// If this group is dummy, set the corresponding position
+  int set_dummy_pos(cvm::atom_pos const &pos);
+
   /// \brief Print the updated the total mass and charge of a group.
   /// This is needed in case the hosting MD code has an option to
   /// change atom masses after their initialization.
@@ -209,7 +222,7 @@ public:
   static std::vector<feature *> ag_features;
 
   /// \brief Implementation of the feature list accessor for atom group
-  virtual const std::vector<feature *> &features()
+  virtual const std::vector<feature *> &features() const
   {
     return ag_features;
   }

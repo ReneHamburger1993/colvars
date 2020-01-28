@@ -1,5 +1,12 @@
 // -*- c++ -*-
 
+// This file is part of the Collective Variables module (Colvars).
+// The original version of Colvars and its updates are located at:
+// https://github.com/Colvars/colvars
+// Please update all Colvars source files before making any changes.
+// If you wish to distribute your changes, please submit them to the
+// Colvars repository at GitHub.
+
 #include "colvarmodule.h"
 #include "colvarproxy.h"
 #include "colvarvalue.h"
@@ -226,24 +233,17 @@ int colvarbias::add_colvar(std::string const &cv_name)
     }
 
     colvars.push_back(cv);
+    cv->biases.push_back(this); // add back-reference to this bias to colvar
+
+    // Add dependency link. All biases need at least the value of each colvar
+    // although possibly not at all timesteps
+    add_child(cv);
 
     colvar_forces.push_back(colvarvalue());
     colvar_forces.back().type(cv->value()); // make sure each force is initialized to zero
     colvar_forces.back().is_derivative(); // colvar constraints are not applied to the force
     colvar_forces.back().reset();
-
     previous_colvar_forces.push_back(colvar_forces.back());
-
-    cv->biases.push_back(this); // add back-reference to this bias to colvar
-
-    if (is_enabled(f_cvb_apply_force)) {
-      cv->enable(f_cv_gradient);
-    }
-
-    // Add dependency link.
-    // All biases need at least the value of each colvar
-    // although possibly not at all timesteps
-    add_child(cv);
 
   } else {
     cvm::error("Error: cannot find a colvar named \""+
@@ -261,19 +261,38 @@ int colvarbias::update()
     cvm::log("Updating the "+bias_type+" bias \""+this->name+"\".\n");
   }
 
+  int error_code = COLVARS_OK;
+
   has_data = true;
 
+  error_code |= calc_energy(NULL);
+  error_code |= calc_forces(NULL);
+
+  return error_code;
+}
+
+
+int colvarbias::calc_energy(std::vector<colvarvalue> const *)
+{
   bias_energy = 0.0;
+  return COLVARS_OK;
+}
+
+
+int colvarbias::calc_forces(std::vector<colvarvalue> const *)
+{
   for (size_t ir = 0; ir < num_variables(); ir++) {
     colvar_forces[ir].reset();
   }
-
   return COLVARS_OK;
 }
 
 
 void colvarbias::communicate_forces()
 {
+  if (! is_enabled(f_cvb_apply_force)) {
+    return;
+  }
   size_t i = 0;
   for (i = 0; i < num_variables(); i++) {
     if (cvm::debug()) {
@@ -299,7 +318,7 @@ int colvarbias::end_of_step()
 }
 
 
-int colvarbias::change_configuration(std::string const &conf)
+int colvarbias::change_configuration(std::string const & /* conf */)
 {
   cvm::error("Error: change_configuration() not implemented.\n",
              COLVARS_NOT_IMPLEMENTED);
@@ -307,7 +326,7 @@ int colvarbias::change_configuration(std::string const &conf)
 }
 
 
-cvm::real colvarbias::energy_difference(std::string const &conf)
+cvm::real colvarbias::energy_difference(std::string const & /* conf */)
 {
   cvm::error("Error: energy_difference() not implemented.\n",
              COLVARS_NOT_IMPLEMENTED);
@@ -326,7 +345,7 @@ int colvarbias::current_bin()
   cvm::error("Error: current_bin() not implemented.\n");
   return COLVARS_NOT_IMPLEMENTED;
 }
-int colvarbias::bin_count(int bin_index)
+int colvarbias::bin_count(int /* bin_index */)
 {
   cvm::error("Error: bin_count() not implemented.\n");
   return COLVARS_NOT_IMPLEMENTED;
@@ -400,6 +419,8 @@ std::istream & colvarbias::read_state(std::istream &is)
        !(is >> brace) || !(brace == "{") ||
        !(is >> colvarparse::read_block("configuration", conf)) ||
        (set_state_params(conf) != COLVARS_OK) ) {
+    if (key != bias_type)
+      cvm::log("Found key \"" + key + "\" instead of \"" + bias_type + "\"\n");
     cvm::error("Error: in reading state configuration for \""+bias_type+"\" bias \""+
                this->name+"\" at position "+
                cvm::to_str(static_cast<size_t>(is.tellg()))+
@@ -636,7 +657,7 @@ std::string const colvarbias_ti::get_state_params() const
 }
 
 
-int colvarbias_ti::set_state_params(std::string const &state_conf)
+int colvarbias_ti::set_state_params(std::string const & /* state_conf */)
 {
   return COLVARS_OK;
 }
@@ -701,7 +722,7 @@ int colvarbias_ti::write_output_files()
       cvm::proxy->close_output_stream(ti_count_file_name);
     }
 
-    std::string const ti_grad_file_name(ti_output_prefix+".ti.grad");
+    std::string const ti_grad_file_name(ti_output_prefix+".ti.force");
     os = cvm::proxy->output_stream(ti_grad_file_name);
     if (os) {
       ti_avg_forces->write_multicol(*os);

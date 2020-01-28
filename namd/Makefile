@@ -88,7 +88,6 @@ CKLOOP_MODULE = -module CkLoop
 CXXTHREADOPTS = $(CXXOPTS) 
 CXXSIMPARAMOPTS = $(CXXOPTS) 
 CXXNOALIASOPTS = $(CXXOPTS) 
-CXXCOLVAROPTS = $(CXXOPTS) 
 CXXMEMUSAGE = $(CXX)
 CUDACC = $(CXX)
 CUDAOBJS =
@@ -245,7 +244,6 @@ OBJS = \
 	$(DSTDIR)/GoMolecule.o \
         $(DSTDIR)/MoleculeQM.o \
 	$(DSTDIR)/NamdCentLB.o \
-	$(DSTDIR)/NamdNborLB.o \
 	$(DSTDIR)/NamdHybridLB.o \
 	$(DSTDIR)/NamdDummyLB.o \
 	$(DSTDIR)/NamdState.o \
@@ -333,8 +331,6 @@ CIFILES = 	\
 		$(INCDIR)/LdbCoordinator.def.h \
 		$(INCDIR)/NamdCentLB.decl.h \
 		$(INCDIR)/NamdCentLB.def.h \
-		$(INCDIR)/NamdNborLB.decl.h \
-		$(INCDIR)/NamdNborLB.def.h \
 		$(INCDIR)/NamdHybridLB.decl.h \
 		$(INCDIR)/NamdHybridLB.def.h \
 		$(INCDIR)/NamdDummyLB.decl.h \
@@ -419,9 +415,7 @@ CHARMC = $(CHARM)/bin/charmc
 CHARMXI = $(CHARM)/bin/charmc
 CHARMINC = $(CHARM)/include $(COPTD)CMK_OPTIMIZE=1
 CHARMLIB = $(CHARM)/lib
-CHARM_MODULES = -module NeighborLB -module HybridLB -module RefineLB -module GreedyLB -module CkMulticast $(CKLOOP_MODULE)
-#CHARM_MODULES = -module NeighborLB -module HybridLB -module RefineLB -module GreedyLB
-#CHARM_MODULES = -module msa -module NeighborLB -module HybridLB -module RefineLB -module GreedyLB
+CHARM_MODULES = -module CkMulticast $(CKLOOP_MODULE)
 #MSA = -DCHARM_HAS_MSA
 
 # Libraries we may have changed
@@ -434,7 +428,7 @@ CXXMICFLAGS = $(CXXBASEFLAGS) $(CXXOPTS) $(CXXMICOPTS)
 CXXTHREADFLAGS = $(CXXBASEFLAGS) $(CXXTHREADOPTS)
 CXXSIMPARAMFLAGS = $(CXXBASEFLAGS) $(CXXSIMPARAMOPTS)
 CXXNOALIASFLAGS = $(CXXBASEFLAGS) $(CXXNOALIASOPTS)
-COLVARSCXXFLAGS = $(CXXBASEFLAGS) $(CXXCOLVAROPTS) $(COPTI)$(LEPTONINCDIR) -DLEPTON -DLEPTON_USE_STATIC_LIBRARIES
+COLVARSCXXFLAGS = $(CXXBASEFLAGS) $(CXXOPTS) $(COPTI)$(LEPTONINCDIR) -DLEPTON -DLEPTON_USE_STATIC_LIBRARIES
 GXXFLAGS = $(CXXBASEFLAGS) -DNO_STRSTREAM_H
 CFLAGS = $(COPTI)$(SRCDIR) $(TCL) $(COPTS) $(RELEASE) $(EXTRADEFINES) $(TRACEOBJDEF)
 PLUGINGCCFLAGS = $(COPTI)$(PLUGINSRCDIR) $(COPTI)$(PLUGININCDIR) $(COPTD)STATIC_PLUGIN
@@ -443,7 +437,7 @@ SBCFLAGS = $(COPTI)$(SBSRCDIR) $(COPTI)$(PLUGININCDIR) $(COPTD)STATIC_PLUGIN -DP
 SBGCCFLAGS = $(COPTI)$(SBSRCDIR) $(COPTI)$(PLUGININCDIR) $(COPTD)STATIC_PLUGIN -DPSFGEN_USEPLUGINS $(TCL) $(RELEASE) $(EXTRADEFINES) $(TRACEOBJDEF)
 COLVARSGXXFLAGS= $(GXXFLAGS)
 LEPTONGCCFLAGS= $(COPTI)$(LEPTONINCDIR)
-LEPTONCXXFLAGS=$(CXXBASEFLAGS) $(COPTI)$(LEPTONINCDIR) -DLEPTON_BUILDING_STATIC_LIBRARY
+LEPTONCXXFLAGS=$(CXXBASEFLAGS) $(CXXOPTS) $(COPTI)$(LEPTONINCDIR) -DLEPTON_BUILDING_STATIC_LIBRARY
 
 # .ci preprocessing flags
 CIPPFLAGS = $(CUDAFLAGS) -DBONDED_CUDA
@@ -630,7 +624,7 @@ summary: $(MKINCDIR) $(MKDSTDIR) $(OBJS) $(LIBS)
 	$(MAKEBUILDINFO)
 	$(CHARMC) -verbose -ld++-option \
 	'$(COPTI)$(CHARMINC) $(COPTI)$(INCDIR) $(COPTI)$(SRCDIR) $(CXXOPTS)' \
-	-module NeighborLB -module CkMulticast -language charm++ \
+	-module CkMulticast -language charm++ \
 	-tracemode summary \
 	$(BUILDINFO).o \
 	$(OBJS) \
@@ -678,6 +672,8 @@ $(INCDIR)/%.decl.h $(INCDIR)/%.def.h: $(MKINCDIR) $(SRCDIR)/%.ci
 # Explicit rules for modules that don't match their file names.
 # Multiple targets must be a pattern to execute recipe only once.
 DEPENDFILE = .rootdir/Make.depends
+DEPENDFILECOLVARS = .rootdir/colvars/Make.depends
+DEPENDFILELEPTON = .rootdir/lepton/Make.depends
 
 # This is a CPU killer...  Don't make depends if you don't need to.
 depends: $(MKINCDIR) $(CIFILES) $(MKDSTDIR) $(DEPENDFILE)
@@ -685,7 +681,15 @@ depends: $(MKINCDIR) $(CIFILES) $(MKDSTDIR) $(DEPENDFILE)
 	if [ -f $(DEPENDFILE) ]; then \
 	   $(MOVE) -f $(DEPENDFILE) $(DEPENDFILE).old; \
 	fi; \
+	if [ -f $(DEPENDFILECOLVARS) ]; then \
+	   $(MOVE) -f $(DEPENDFILECOLVARS) $(DEPENDFILECOLVARS).old; \
+	fi; \
+	if [ -f $(DEPENDFILELEPTON) ]; then \
+	   $(MOVE) -f $(DEPENDFILELEPTON) $(DEPENDFILELEPTON).old; \
+	fi; \
 	touch $(DEPENDFILE); \
+	touch $(DEPENDFILECOLVARS); \
+	touch $(DEPENDFILELEPTON); \
 	for i in $(OBJS) ; do \
 	      SRCFILE=$(SRCDIR)/`basename $$i .o`.C ; \
 	      COMPILER='$$(CXX)' ; \
@@ -728,19 +732,21 @@ depends: $(MKINCDIR) $(CIFILES) $(MKDSTDIR) $(DEPENDFILE)
 	for i in $(COLVARSLIB) ; do \
 	      SRCFILE=$(COLVARSSRCDIR)/`basename $$i .o`.cpp ; \
 	      $(ECHO) "checking dependencies for $$SRCFILE" ; \
-	      gcc -MM $(COLVARSGXXFLAGS) $$SRCFILE | \
-	      perl $(SRCDIR)/dc.pl $(CHARMINC) $(TCLDIR) $(FFTDIR) /usr/include /usr/local >> $(DEPENDFILE); \
+	      g++ -std=c++0x -MM $(COLVARSGXXFLAGS) $$SRCFILE | \
+	      perl $(SRCDIR)/dc.pl $(CHARMINC) $(TCLDIR) $(FFTDIR) /usr/include /usr/local >> $(DEPENDFILECOLVARS) ; \
 	      $(ECHO) '	$$(CXX) $$(COLVARSCXXFLAGS) $$(COPTO)'$$i '$$(COPTC)' \
-		$$SRCFILE >> $(DEPENDFILE) ; \
+		$$SRCFILE >> $(DEPENDFILECOLVARS) ; \
 	done; \
+	$(ECHO) include $(DEPENDFILECOLVARS) >> $(DEPENDFILE) ; \
 	for i in $(LEPTONOBJS) ; do \
 	      SRCFILE=$(LEPTONSRCDIR)/`basename $$i .o`.cpp ; \
 	      $(ECHO) "checking dependencies for $$SRCFILE" ; \
-	      gcc -MM $(LEPTONGCCFLAGS) $$SRCFILE | \
-	      perl $(SRCDIR)/dc.pl $(CHARMINC) $(TCLDIR) $(FFTDIR) /usr/include /usr/local >> $(DEPENDFILE); \
+	      g++ -std=c++0x -MM $(LEPTONGCCFLAGS) $$SRCFILE | \
+	      perl $(SRCDIR)/dc.pl $(CHARMINC) $(TCLDIR) $(FFTDIR) /usr/include /usr/local >> $(DEPENDFILELEPTON); \
 	      $(ECHO) '	$$(CXX) $$(LEPTONCXXFLAGS) $$(COPTO)'$$i '$$(COPTC)' \
-		$$SRCFILE >> $(DEPENDFILE) ; \
+		$$SRCFILE >> $(DEPENDFILELEPTON) ; \
 	done; \
+	$(ECHO) include $(DEPENDFILELEPTON) >> $(DEPENDFILE) ; \
 	$(RM) $(DEPENDFILE).sed; \
 	sed -e "/obj\/Controller.o/ s/CXXFLAGS/CXXTHREADFLAGS/" \
 	    -e "/obj\/Sequencer.o/ s/CXXFLAGS/CXXTHREADFLAGS/" \

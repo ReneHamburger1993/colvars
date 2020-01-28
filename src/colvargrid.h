@@ -1,5 +1,12 @@
 // -*- c++ -*-
 
+// This file is part of the Collective Variables module (Colvars).
+// The original version of Colvars and its updates are located at:
+// https://github.com/Colvars/colvars
+// Please update all Colvars source files before making any changes.
+// If you wish to distribute your changes, please submit them to the
+// Colvars repository at GitHub.
+
 #ifndef COLVARGRID_H
 #define COLVARGRID_H
 
@@ -45,7 +52,7 @@ protected:
   std::vector<colvar *> cv;
 
   /// Do we request actual value (for extended-system colvars)?
-  std::vector<bool> actual_value;
+  std::vector<bool> use_actual_value;
 
   /// Get the low-level index corresponding to an index
   inline size_t address(std::vector<int> const &ix) const
@@ -128,8 +135,8 @@ public:
   inline void request_actual_value(bool b = true)
   {
     size_t i;
-    for (i = 0; i < actual_value.size(); i++) {
-      actual_value[i] = b;
+    for (i = 0; i < use_actual_value.size(); i++) {
+      use_actual_value[i] = b;
     }
   }
 
@@ -202,12 +209,13 @@ public:
   /// \brief "Almost copy-constructor": only copies configuration
   /// parameters from another grid, but doesn't reallocate stuff;
   /// setup() must be called after that;
-  colvar_grid(colvar_grid<T> const &g) : nd(g.nd),
+  colvar_grid(colvar_grid<T> const &g) : colvarparse(),
+					 nd(g.nd),
                                          nx(g.nx),
                                          mult(g.mult),
                                          data(),
                                          cv(g.cv),
-                                         actual_value(g.actual_value),
+                                         use_actual_value(g.use_actual_value),
                                          lower_boundaries(g.lower_boundaries),
                                          upper_boundaries(g.upper_boundaries),
                                          periodic(g.periodic),
@@ -277,18 +285,18 @@ public:
       }
 
       widths.push_back(cv[i]->width);
-      hard_lower_boundaries.push_back(cv[i]->hard_lower_boundary);
-      hard_upper_boundaries.push_back(cv[i]->hard_upper_boundary);
+      hard_lower_boundaries.push_back(cv[i]->is_enabled(colvardeps::f_cv_hard_lower_boundary));
+      hard_upper_boundaries.push_back(cv[i]->is_enabled(colvardeps::f_cv_hard_upper_boundary));
       periodic.push_back(cv[i]->periodic_boundaries());
 
       // By default, get reported colvar value (for extended Lagrangian colvars)
-      actual_value.push_back(false);
+      use_actual_value.push_back(false);
 
       // except if a colvar is specified twice in a row
       // then the first instance is the actual value
       // For histograms of extended-system coordinates
       if (i > 0 && cv[i-1] == cv[i]) {
-        actual_value[i-1] = true;
+        use_actual_value[i-1] = true;
       }
 
       if (margin) {
@@ -383,20 +391,20 @@ public:
   /// \brief Report the bin corresponding to the current value of variable i
   inline int current_bin_scalar(int const i) const
   {
-    return value_to_bin_scalar(actual_value[i] ? cv[i]->actual_value() : cv[i]->value(), i);
+    return value_to_bin_scalar(use_actual_value[i] ? cv[i]->actual_value() : cv[i]->value(), i);
   }
 
   /// \brief Report the bin corresponding to the current value of variable i
   /// and assign first or last bin if out of boundaries
   inline int current_bin_scalar_bound(int const i) const
   {
-    return value_to_bin_scalar_bound(actual_value[i] ? cv[i]->actual_value() : cv[i]->value(), i);
+    return value_to_bin_scalar_bound(use_actual_value[i] ? cv[i]->actual_value() : cv[i]->value(), i);
   }
 
   /// \brief Report the bin corresponding to the current value of item iv in variable i
   inline int current_bin_scalar(int const i, int const iv) const
   {
-    return value_to_bin_scalar(actual_value[i] ?
+    return value_to_bin_scalar(use_actual_value[i] ?
                                cv[i]->actual_value().vector1d_value[iv] :
                                cv[i]->value().vector1d_value[iv], i);
   }
@@ -406,6 +414,20 @@ public:
   inline int value_to_bin_scalar(colvarvalue const &value, const int i) const
   {
     return (int) cvm::floor( (value.real_value - lower_boundaries[i].real_value) / widths[i] );
+  }
+
+  /// \brief Report the fraction of bin beyond current_bin_scalar()
+  inline cvm::real current_bin_scalar_fraction(int const i) const
+  {
+    return value_to_bin_scalar_fraction(use_actual_value[i] ? cv[i]->actual_value() : cv[i]->value(), i);
+  }
+
+  /// \brief Use the lower boundary and the width to report the fraction of bin
+  /// beyond value_to_bin_scalar() that the provided value is in
+  inline cvm::real value_to_bin_scalar_fraction(colvarvalue const &value, const int i) const
+  {
+    cvm::real x = (value.real_value - lower_boundaries[i].real_value) / widths[i];
+    return x - cvm::floor(x);
   }
 
   /// \brief Use the lower boundary and the width to report which bin
@@ -550,11 +572,11 @@ public:
       data[i] *= a;
   }
 
-  /// \brief Assign all zero elements a scalar constant (fast loop)
-  inline void remove_zeros(cvm::real const &a)
+  /// \brief Assign values that are smaller than scalar constant the latter value (fast loop)
+  inline void remove_small_values(cvm::real const &a)
   {
     for (size_t i = 0; i < nt; i++)
-      if(data[i]==0) data[i] = a;
+      if(data[i]<a) data[i] = a;
   }
 
 
@@ -832,7 +854,7 @@ public:
 
     if (nd < lower_boundaries.size()) nd = lower_boundaries.size();
 
-    if (! actual_value.size()) actual_value.assign(nd, false);
+    if (! use_actual_value.size()) use_actual_value.assign(nd, false);
     if (! periodic.size()) periodic.assign(nd, false);
     if (! widths.size()) widths.assign(nd, 1.0);
 

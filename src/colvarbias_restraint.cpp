@@ -1,5 +1,12 @@
 // -*- c++ -*-
 
+// This file is part of the Collective Variables module (Colvars).
+// The original version of Colvars and its updates are located at:
+// https://github.com/Colvars/colvars
+// Please update all Colvars source files before making any changes.
+// If you wish to distribute your changes, please submit them to the
+// Colvars repository at GitHub.
+
 #include "colvarmodule.h"
 #include "colvarproxy.h"
 #include "colvarvalue.h"
@@ -167,7 +174,7 @@ int colvarbias_restraint_k::change_configuration(std::string const &conf)
 
 
 
-colvarbias_restraint_moving::colvarbias_restraint_moving(char const *key)
+colvarbias_restraint_moving::colvarbias_restraint_moving(char const * /* key */)
 {
   target_nstages = 0;
   target_nsteps = 0L;
@@ -1288,7 +1295,8 @@ colvarvalue const colvarbias_restraint_linear::restraint_force(size_t i) const
 
 cvm::real colvarbias_restraint_linear::d_restraint_potential_dk(size_t i) const
 {
-  return 1.0 / variables(i)->width * (variables(i)->value() - colvar_centers[i]);
+  return 1.0 / variables(i)->width * (variables(i)->value() -
+                                      colvar_centers[i]).sum();
 }
 
 
@@ -1356,6 +1364,7 @@ colvarbias_restraint_histogram::colvarbias_restraint_histogram(char const *key)
 int colvarbias_restraint_histogram::init(std::string const &conf)
 {
   colvarbias::init(conf);
+  enable(f_cvb_apply_force);
 
   get_keyval(conf, "lowerBoundary", lower_boundary, lower_boundary);
   get_keyval(conf, "upperBoundary", upper_boundary, upper_boundary);
@@ -1539,7 +1548,7 @@ int colvarbias_restraint_histogram::update()
 }
 
 
-std::ostream & colvarbias_restraint_histogram::write_restart(std::ostream &os)
+int colvarbias_restraint_histogram::write_output_files()
 {
   if (b_write_histogram) {
     std::string file_name(cvm::output_prefix()+"."+this->name+".hist.dat");
@@ -1547,6 +1556,9 @@ std::ostream & colvarbias_restraint_histogram::write_restart(std::ostream &os)
     *os << "# " << cvm::wrap_string(variables(0)->name, cvm::cv_width)
         << "  " << "p(" << cvm::wrap_string(variables(0)->name, cvm::cv_width-3)
         << ")\n";
+
+    os->setf(std::ios::fixed, std::ios::floatfield);
+
     size_t igrid;
     for (igrid = 0; igrid < p.size(); igrid++) {
       cvm::real const x_grid = (lower_boundary + (igrid+1)*width);
@@ -1561,13 +1573,7 @@ std::ostream & colvarbias_restraint_histogram::write_restart(std::ostream &os)
     }
     cvm::proxy->close_output_stream(file_name);
   }
-  return os;
-}
-
-
-std::istream & colvarbias_restraint_histogram::read_restart(std::istream &is)
-{
-  return is;
+  return COLVARS_OK;
 }
 
 

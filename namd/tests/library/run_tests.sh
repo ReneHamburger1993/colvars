@@ -10,24 +10,50 @@
 
 gen_ref_output=''
 
-TMPDIR=/tmp
+export TMPDIR=${TMPDIR:-/tmp}
+
 DIRLIST=''
 BINARY=namd2
 while [ $# -ge 1 ]; do
   if { echo $1 | grep -q namd2 ; }; then
+    echo "Using NAMD executable from $1"
     BINARY=$1
   elif [ "x$1" = 'x-g' ]; then
     gen_ref_output='yes'
+  elif [ "x$1" = 'x-h' ]; then
+    echo "Usage: ./run_tests.sh [-h] [-g] [path_to_namd2] [testdir1 [testdir2 ...]]"  >& 2
+    echo "    The -g option (re)generates reference outputs in the given directories" >& 2
+    echo "    If no executable is given, \"namd2\" is used" >& 2
+    echo "    If no directories are given, all matches of [0-9][0-9][0-9]_* are used" >& 2
+    echo "    This script relies on the executable spiff to be available, and will try to " >& 2
+    echo "    download and build it into $TMPDIR if needed." >& 2
+    exit 0
   else
     DIRLIST=`echo ${DIRLIST} $1`
   fi
   shift
 done
+
+TOPDIR=$(git rev-parse --show-toplevel)
+if [ ! -d ${TOPDIR} ] ; then
+  echo "Error: cannot identify top project directory." >& 2
+  exit 1
+fi
+
+SPIFF=$(${TOPDIR}/devel-tools/get_spiff)
+if [ $? != 0 ] ; then
+    echo "Error: spiff is not available and could not be downloaded/built." >& 2
+    exit 1
+else
+    echo "Using spiff executable from $SPIFF"
+    hash -p ${SPIFF} spiff
+fi
+
 if ! { echo ${DIRLIST} | grep -q 0 ; } then
   DIRLIST=`eval ls -d [0-9][0-9][0-9]_*`
 fi
 
-NUM_THREADS=3
+NUM_THREADS=1
 NUM_CPUS=$(nproc)
 if [ ${NUM_THREADS} -gt ${NUM_CPUS} ] ; then
   NUM_THREADS=${NUM_CPUS}
@@ -37,7 +63,7 @@ TPUT_RED='true'
 TPUT_GREEN='true'
 TPUT_BLUE='true'
 TPUT_CLEAR='true'
-if which tput >& /dev/null ; then
+if hash tput >& /dev/null ; then
   TPUT_RED='tput setaf 1'
   TPUT_GREEN='tput setaf 2'
   TPUT_BLUE='tput setaf 4'
@@ -59,12 +85,12 @@ cleanup_files() {
     fi
     for f in ${script%.namd}.*diff; do if [ ! -s $f ]; then rm -f $f; fi; done # remove empty diffs only
     rm -f ${script%.namd}.*{BAK,old,backup}
-    for f in ${script%.namd}.*{state,state.stripped,out,traj,coor,vel,xsc,dcd,pmf,hills,grad,count,histogram?.dat,corrfunc.dat,histogram?.dx,count.dx,pmf.dx}
+    for f in ${script%.namd}.*{state,state.stripped,out,traj,coor,vel,xsc,dcd,pmf,hills,grad,force,count,histogram?.dat,hist.dat,corrfunc.dat,histogram?.dx,count.dx,pmf.dx}
     do
       if [ ! -f "$f.diff" ]; then rm -f $f; fi # keep files that have a non-empty diff
     done
     rm -f *.out *.out.diff # Delete output files regardless
-    rm -f metadynamics1.*.files.txt replicas.registry.txt
+    rm -f metadynamics1.*.files.txt metadynamics1.*.files.txt.BAK replicas.registry.txt
   done
   tclsh ../Common/delete_tmp_files.tcl
 }
@@ -150,7 +176,9 @@ for dir in ${DIRLIST} ; do
 
     if [ -f ${basename}.colvars.state ] ; then
       # Filter out the version number from the state files to allow comparisons
-      grep -sv 'version' ${basename}.colvars.state > ${TMPDIR}/${basename}.colvars.state.stripped
+      grep -sv '^  version ' ${basename}.colvars.state | \
+        grep -sv '^  units ' \
+        > ${TMPDIR}/${basename}.colvars.state.stripped
       mv -f ${TMPDIR}/${basename}.colvars.state.stripped ${basename}.colvars.state.stripped
     fi
 
@@ -199,7 +227,7 @@ for dir in ${DIRLIST} ; do
       diff $f $base > "$base.diff"
       RETVAL=$?
     else
-      spiff -r 1e-${DIFF_PREC} $f $base > "$base.diff"
+      ${SPIFF} -r 1e-${DIFF_PREC} $f $base > "$base.diff"
       RETVAL=$?
     fi
     if [ $RETVAL -ne 0 ]

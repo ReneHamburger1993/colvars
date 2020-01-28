@@ -20,9 +20,9 @@ import numpy as np
 
 class Colvar_traj(object):
     """
-    Class to store the trajectory of a collective variable.
-    The series of step numbers are included, because collective
-    variables may be added or deleted during the simulation.
+    Class holding the trajectory of a collective variable.
+    The series of step numbers are included as well, because collective
+    variables may be added or deleted during a simulation.
     """
 
     _name = ""
@@ -39,15 +39,14 @@ class Colvar_traj(object):
         """Returns the length of the trajectory"""
         return len(self._step)
 
-    @property
-    def num_dimensions(self):
-        s = self._colvar.shape
-        if (len(s) > 1):
-            return s[1]
-        else:
-            return 1
+    def __str__(self):
+        """String representation of the trajectory"""
+        return """Trajectory of collective variable '%s':
+    Steps = [%d ... %d]
+    Values = [%f ... %f]""" % (self._name, self._step[0], self._step[-1],
+                               self._colvar[0], self._colvar[-1])
 
-    def set_num_dimensions(self, n_d):
+    def _set_num_dimensions(self, n_d):
         """Set the number of components of the collective variable"""
         if (len(self) > 0):
             print("Warning: changing the number of dimensions "
@@ -58,7 +57,7 @@ class Colvar_traj(object):
         else:
             self._colvar.resize((len(self)))
 
-    def resize(self, n):
+    def _resize(self, n):
         """Change the number of records in the trajectory"""
         self._step.resize((n))
         if (len(self._colvar.shape) > 1):
@@ -66,38 +65,62 @@ class Colvar_traj(object):
         else:
             self._colvar.resize((n))
 
-
     @property
     def name(self):
-        """Returns the name of the collective variable"""
+        """The name of the collective variable"""
         return self._name
+
+    @property
+    def num_dimensions(self):
+        """Dimensionality of the collective variable (d)"""
+        s = self._colvar.shape
+        if (len(s) > 1):
+            return s[1]
+        else:
+            return 1
+
+    @property
+    def num_frames(self):
+        """Number of trajectory frames loaded (n)"""
+        return len(self._step)
+
     @property
     def steps(self):
-        """Returns the array of step numbers"""
+        """The array of step numbers, with shape = (n,)"""
         return self._step
+
     @property
     def values(self):
-        """Returns the array of collective variable values"""
+        """The array of collective variable values, with shape = (n, d)"""
         return self._colvar
 
 
 class Colvars_traj(object):
-    """Trajectories of collective variables (read from colvars.traj file)"""
+    """Trajectories of collective variables, as read from a list of
+    colvars.traj files.
+    Can be accessed as a dictionary using a variable's name as key; each
+    variable's trajectory is an instance of colvars_traj"""
 
     _keys = []
     _start = {}
     _end = {}
     _colvars = {}
     _found = {}
-    _count = -1
     _frame = -1
 
-    def __init__(self):
+    def __init__(self, filenames=None, first=0, last=-1, every=1):
+        """
+        Initialize from the given list of colvars.traj files
+        Any optional arguments are passed to read_files()
+        """
         self._keys = ['step']
         self._start['step'] = 0
         self._end['step'] = -1
         self._count = 0
         self._frame = 0
+        if filenames:
+            self.read_files(filenames=filenames, first=first, last=last,
+                            every=every)
 
     def __getitem__(self, key):
         return self._colvars[key]
@@ -105,14 +128,14 @@ class Colvars_traj(object):
     def __contains__(self, key):
         return key in self._colvars
 
-    @property
-    def num_frames_read(self):
-        """Number of trajectory frames read so far"""
-        return self._count
+    def __str__(self):
+        return """Set of collective variable trajectories:
+    Variables = %s
+    Number of frames = %d""" % (self.variables, self.num_frames)
 
     @property
     def num_frames(self):
-        """Number of trajectory frames processed"""
+        """Number of trajectory frames loaded"""
         return self._frame
 
     @property
@@ -120,7 +143,7 @@ class Colvars_traj(object):
         """Names of variables defined"""
         return self._keys[1:] # The first entry is "step"
 
-    def parse_comment_line(self, line):
+    def _parse_comment_line(self, line):
         """
         Read in a comment line from a colvars.traj file and update the names of
         collective variables according to the contents of the comment line.
@@ -135,7 +158,7 @@ class Colvars_traj(object):
             self._end[self._keys[i-1]] = line.find(' '+self._keys[i]+' ')
             self._end[self._keys[-1]] = -1
 
-    def parse_line(self, line):
+    def _parse_line(self, line):
         """
         Read in a data line from a colvars.traj file
         """
@@ -148,27 +171,27 @@ class Colvars_traj(object):
             n_d = len(v_v)
             if (v not in self._colvars):
                 self._colvars[v] = Colvar_traj(v)
-                self._colvars[v].set_num_dimensions(n_d)
+                self._colvars[v]._set_num_dimensions(n_d)
             cv = self._colvars[v]
             n = len(cv)
-            cv.resize(n+1)
+            cv._resize(n+1)
             cv.steps[n] = step
             cv.values[n] = v_v
 
-        self._count += 1
 
     def read_files(self, filenames, list_variables=False,
                    first=0, last=-1, every=1):
         """
         Read a series of colvars.traj files.
         filenames : list of strings
-            list of file names
+            list of file names to read from
         list_variables : bool
-            list variable names to screen
+            if true, return the list of variable names defined before
+            the first data line
         first : int
-            index of first record to read in (see also mol load in VMD)
+            skip all records before this index (see also mol load in VMD)
         last : int
-            index of last record to read in
+            stop reading after this record
         every : int
             read every these many records
         """
@@ -176,22 +199,20 @@ class Colvars_traj(object):
         if (last == -1):
             last = np.int64(np.iinfo(np.int64).max)
         last_step = -1
-        for f in filenames:
+        for f in [open(filename) for filename in filenames]:
             for line in f:
                 if (len(line) == 0): continue
                 if (line[:1] == "@"): continue # xmgr file metadata
                 if (line[:1] == "#"):
-                    self.parse_comment_line(line)
+                    self._parse_comment_line(line)
                     continue
-                if (args.list_variables):
-                    for v in self.variables:
-                        print(v)
-                    return
+                if list_variables:
+                    return self.variables
                 step = np.int64(line[0:self._end['step']])
                 if (step == last_step): continue
                 if ((self._frame >= first) and (self._frame <= last) and
                     (self._frame % every == 0)):
-                    self.parse_line(line)
+                    self._parse_line(line)
                 self._frame += 1
                 last_step = step
 
@@ -212,13 +233,12 @@ if (__name__ == '__main__'):
 
     parser.add_argument(dest='filenames',
                         nargs='*',
-                        type=argparse.FileType('r'),
+                        type=str,
                         help='Space-separated list of .colvars.traj files '
                         '(will be concatenated)',
                         default=[])
 
     parser.add_argument('--dt',
-                        dest='dt',
                         type=float,
                         help='Integration time step',
                         default=2.0e-6)
@@ -242,7 +262,6 @@ if (__name__ == '__main__'):
                         default=1)
 
     parser.add_argument('--variables',
-                        dest='variables',
                         nargs='*',
                         type=str,
                         help='Space-separated list of names of collective '
@@ -250,14 +269,12 @@ if (__name__ == '__main__'):
                         default=[])
 
     parser.add_argument('--list-variables',
-                        dest='list_variables',
                         action='store_true',
                         help='List all names of collective variables '
                         'defined up until the first line of data.',
                         default=False)
 
     parser.add_argument('--output-file',
-                        dest='output_file',
                         type=str,
                         help='Write the selected variables to a text file.  '
                         'The step number is always included as the first '
@@ -265,46 +282,41 @@ if (__name__ == '__main__'):
                         'must be defined on the same trajectory segments.',
                         default=None)
 
-    try:
+    parser.add_argument('--plot-file',
+                        type=str,
+                        help='Plot into a file with this name if the '
+                        'extension is one of "png", "pdf", "ps", "eps", '
+                        'or "svg", or to the screen if not given '
+                        'and --output-file is also not given.',
+                        default=None)
 
-        import matplotlib
+    parser.add_argument('--plot-x-axis',
+                        type=str,
+                        help='Use this variable as X axis in the plot.',
+                        default='time')
 
-        parser.add_argument('--plot-file',
-                            dest='plot_file',
-                            type=str,
-                            help='Plot into a file with this name if the '
-                            'extension is one of "png", "pdf", "ps", "eps", '
-                            'or "svg", or to the screen if not given '
-                            'and --output-file is also not given.',
-                            default=None)
+    parser.add_argument('--plot-x-label',
+                        type=str,
+                        help='Use this label for the X axis.',
+                        default=None)
 
-        parser.add_argument('--plot-x-axis',
-                            dest='plot_x_axis',
-                            type=str,
-                            help='Use this variable as X axis in the plot.',
-                            default='time')
+    parser.add_argument('--plot-y-label',
+                        type=str,
+                        help='Use this label for the Y axis.',
+                        default=None)
 
-        parser.add_argument('--plot-x-label',
-                            dest='plot_x_label',
-                            type=str,
-                            help='Use this label for the X axis.',
-                            default=None)
+    parser.add_argument('--plot-keys',
+                        nargs='*',
+                        type=str,
+                        help='Alternative names for the legend',
+                        default=[])
 
-        parser.add_argument('--plot-y-label',
-                            dest='plot_y_label',
-                            type=str,
-                            help='Use this label for the Y axis.',
-                            default=None)
-
-        parser.add_argument('--plot-keys',
-                            dest='plot_keys',
-                            nargs='*',
-                            type=str,
-                            help='Alternative names for the legend',
-                            default=[])
-
-    except ImportError:
-        matplotlib = None
+    parser.add_argument('--plot-time-factor',
+                        type=int,
+                        help='Average these many consecutive frames '
+                        'together before plotting but after reading '
+                        'from files',
+                        default=1)
 
     args = parser.parse_args()
 
@@ -312,16 +324,27 @@ if (__name__ == '__main__'):
         raise Exception("No filenames provided.")
 
     colvars_traj = Colvars_traj()
-    colvars_traj.read_files(args.filenames,
-                            list_variables=args.list_variables,
-                            first=args.first,
-                            last=args.last,
-                            every=args.skip)
+    r = colvars_traj.read_files(args.filenames,
+                                list_variables=args.list_variables,
+                                first=args.first,
+                                last=args.last,
+                                every=args.skip)
 
     if (args.list_variables):
+        print(r)
         sys.exit()
 
     variables = args.variables
+
+    for var in variables:
+        try:
+            cv = colvars_traj[var]
+        except KeyError:
+            print("ERROR: could not find \""+var+"\"; below are the available "
+                  "fields: ")
+            print("  ", *colvars_traj.variables)
+            raise KeyError
+
     if (len(variables) == 0): variables = colvars_traj.variables
 
     plot_keys = dict(zip(variables, variables))
@@ -393,10 +416,22 @@ if (__name__ == '__main__'):
             else:
                 x = colvars_traj[args.plot_x_axis].values
 
+            if (args.plot_time_factor > 1):
+                # Usually 1
+                start_ave = colvars_traj.num_frames % args.plot_time_factor
+                x = x[start_ave:].reshape(x.shape[0]//args.plot_time_factor,
+                                          args.plot_time_factor).mean(1)
+
             for ic in range(cv.num_dimensions):
                 y = cv.values
                 if (cv.num_dimensions > 1):
                     y = cv.values[:,ic]
+
+                if (args.plot_time_factor > 1):
+                    start_ave = colvars_traj.num_frames % args.plot_time_factor
+                    y = y[start_ave:].reshape(y.shape[0]//args.plot_time_factor,
+                                              args.plot_time_factor).mean(1)
+
                 plt.plot(x, y, '-',
                          label=plot_keys[var],
                          alpha=0.5)

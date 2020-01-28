@@ -1,7 +1,0 @@
-    orientation {
-        atoms {
-            atomNumbers 1 2 3
-        }
-        refPositionsFile @
-    }
-
