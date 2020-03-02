@@ -71,7 +71,6 @@ colvarproxy_lammps::colvarproxy_lammps(LAMMPS_NS::LAMMPS *lmp,
   _random = new LAMMPS_NS::RanPark(lmp,seed);
 
   first_timestep=true;
-  total_force_requested=false;
   previous_step=-1;
   t_target=temp;
   do_exit=false;
@@ -94,8 +93,8 @@ colvarproxy_lammps::colvarproxy_lammps(LAMMPS_NS::LAMMPS *lmp,
 
   // check if it is possible to save output configuration
   if ((!output_prefix_str.size()) && (!restart_output_prefix_str.size())) {
-    fatal_error("Error: neither the final output state file or "
-                "the output restart file could be defined, exiting.\n");
+    error("Error: neither the final output state file or "
+          "the output restart file could be defined, exiting.\n");
   }
 
   // try to extract a restart prefix from a potential restart command.
@@ -160,14 +159,20 @@ void colvarproxy_lammps::init(const char *conf_file)
   }
 }
 
-void colvarproxy_lammps::add_config_file(const char *conf_file)
+int colvarproxy_lammps::add_config_file(const char *conf_file)
 {
-  colvars->read_config_file(conf_file);
+  return colvars->read_config_file(conf_file);
 }
 
-void colvarproxy_lammps::add_config_string(const std::string &conf)
+int colvarproxy_lammps::add_config_string(const std::string &conf)
 {
-  colvars->read_config_string(conf);
+  return colvars->read_config_string(conf);
+}
+
+int colvarproxy_lammps::read_state_file(char const *state_filename);
+{
+  input_prefix() = std::string(state_filename);
+  return colvars->setup_input()}
 }
 
 colvarproxy_lammps::~colvarproxy_lammps()
@@ -316,13 +321,6 @@ void colvarproxy_lammps::log(std::string const &message)
 
 
 void colvarproxy_lammps::error(std::string const &message)
-{
-  // In LAMMPS, all errors are fatal
-  fatal_error(message);
-}
-
-
-void colvarproxy_lammps::fatal_error(std::string const &message)
 {
   log(message);
   _lmp->error->one(FLERR,

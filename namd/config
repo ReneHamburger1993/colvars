@@ -1,5 +1,5 @@
 #!/bin/bash
-CHARM_VERSION=6.10.0
+CHARM_VERSION=6.10.1
 
 function error_syntax {
   echo ''
@@ -441,9 +441,15 @@ function error_exists {
 
     if (( $charm_arch_mpi || ! $charm_arch_smp )); then
       echo ''
+      if (( $charm_arch_mpi )); then
+        echo "ERROR: MPI-based Charm++ arch $CHARM_ARCH is not compatible with $ERRTYPE NAMD."
+      fi
+      if (( ! $charm_arch_smp )); then
+        echo "ERROR: Non-SMP Charm++ arch $CHARM_ARCH is not compatible with $ERRTYPE NAMD."
+      fi
       echo "ERROR: $ERRTYPE builds require non-MPI SMP or multicore Charm++ arch for reasonable performance."
       echo ''
-      echo "Consider ibverbs-smp or verbs-smp (InfiniBand), gni-smp (Cray), or multicore (single node)."
+      echo "Consider ucx-smp or verbs-smp (InfiniBand), gni-smp (Cray), or multicore (single node)."
       echo ''
       exit 1
     fi
@@ -559,6 +565,10 @@ function error_exists {
     CHARM_BASE=.rootdir/charm-$CHARM_VERSION
     echo "Using Charm++ $CHARM_VERSION build found in main build directory"
     echo "CHARMBASE = .rootdir/charm-$CHARM_VERSION" > Make.config
+  elif [ -d ".rootdir/charm-$CHARM_VERSION-pre" ]; then
+    CHARM_BASE=.rootdir/charm-$CHARM_VERSION-pre
+    echo "Using Charm++ $CHARM_VERSION-pre build found in main build directory"
+    echo "CHARMBASE = .rootdir/charm-$CHARM_VERSION-pre" > Make.config
   elif [ -d .rootdir/charm ]; then
     CHARM_BASE=.rootdir/charm
     echo "Using Charm++ build found in main build directory"

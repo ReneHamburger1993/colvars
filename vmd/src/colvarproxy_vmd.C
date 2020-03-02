@@ -17,6 +17,10 @@
 #include "Inform.h"
 #include "utilities.h"
 
+#if !defined(COLVARS_TCL)
+#define COLVARS_TCL
+#endif
+
 #include "colvarmodule.h"
 #include "colvarscript.h"
 #include "colvaratoms.h"
@@ -25,98 +29,36 @@
 #include "colvarproxy_vmd.h"
 
 
+namespace {
+  // Keep pointers to relevant runtime objects
+  VMDApp *colvars_vmd_ptr = NULL;
+  colvarproxy_vmd *colvarproxy_vmd_ptr = NULL;
+}
 
-int tcl_colvars(ClientData clientdata, Tcl_Interp *interp,
+
+int tcl_colvars(ClientData clientData, Tcl_Interp *interp,
                 int objc, Tcl_Obj *const objv[])
 {
-  static colvarproxy_vmd *proxy = NULL;
-  static std::string tcl_result;
-  int script_retval;
-
-  if (proxy != NULL) {
-
-    if (objc >= 2 && !strcmp(Tcl_GetString(objv[1]), "molid")) {
-       if (objc == 2) {
-        Tcl_SetResult(interp, const_cast<char *>(cvm::to_str(proxy->get_vmdmolid()).c_str()), TCL_VOLATILE);
-        return TCL_OK;
-       } else {
-        Tcl_SetResult(interp, (char *) "Colvars module already created:"
-                                       " type \"cv\" for a list of "
-                                       "arguments.",
-                      TCL_STATIC);
-        return TCL_ERROR;
-      }
-    }
-
-    // Clear non-fatal errors from previous commands
-    cvm::clear_error();
-    proxy->error_output.clear();
-    tcl_result.clear();
-
-    script_retval =
-      proxy->script->run(objc,
-                         reinterpret_cast<unsigned char *const *>(objv));
-    // append the error messages from colvarscript to the error messages
-    // caught by the proxy
-    tcl_result = proxy->error_output + proxy->script->result;
-    Tcl_SetResult(interp, (char *) tcl_result.c_str(), TCL_VOLATILE);
-
-    if (proxy->delete_requested()) {
-      Tcl_SetResult(interp,
-                    (char *) "Deleting Colvars instance: to recreate, "
-                    "use cv molid <molecule id>",
-                    TCL_STATIC);
-      delete proxy;
-      proxy = NULL;
-      return TCL_OK;
-    }
-
-    if (cvm::get_error_bit(FATAL_ERROR)) {
-      // Fatal error: clean up cvm object and proxy
-      delete proxy;
-      proxy = NULL;
-      return TCL_ERROR;
-    }
-
-    if (script_retval == COLVARSCRIPT_OK && !cvm::get_error()) {
-      return TCL_OK;
-    } else {
-      return TCL_ERROR;
-    }
-
-  } else {
-
-    VMDApp *vmd = (VMDApp *) clientdata;
-    if (vmd == NULL) {
-      Tcl_SetResult(interp, (char *) "Error: cannot find VMD main object.",
-                    TCL_STATIC);
-      return TCL_ERROR;
-    }
-
-    if (objc >= 3) {
-      // require a molid to create the module
-      if (!strcmp(Tcl_GetString(objv[1]), "molid")) {
-        int molid = -1;
-        if (!strcmp(Tcl_GetString(objv[2]), "top")) {
-          molid = vmd->molecule_top();
-        } else {
-          Tcl_GetIntFromObj(interp, objv[2], &molid);
-        }
-        if (vmd->molecule_valid_id(molid)) {
-          proxy = new colvarproxy_vmd(interp, vmd, molid);
-          return TCL_OK;
-        } else {
-          Tcl_SetResult(interp, (char *) "Error: molecule not found.",
-                        TCL_STATIC);
-          return TCL_ERROR;
-        }
-      }
-    }
+  // Get pointer to VMD object
+  if (colvars_vmd_ptr == NULL) {
+    colvars_vmd_ptr = (VMDApp *) clientData;
   }
+  return tcl_run_colvarscript_command(clientData, interp, objc, objv);
+}
 
-  Tcl_SetResult(interp, (char *) "First, setup the Colvars module with: "
-                                 "cv molid <molecule id>", TCL_STATIC);
-  return TCL_ERROR;
+
+int tcl_colvars_vmd_init(Tcl_Interp *interp, int molid_input)
+{
+  VMDApp *const vmd = colvars_vmd_ptr;
+  int molid = molid_input >= 0 ? molid_input : vmd->molecule_top();
+  if (vmd->molecule_valid_id(molid)) {
+    colvarproxy_vmd_ptr = new colvarproxy_vmd(interp, vmd, molid);
+    return (cvm::get_error() == COLVARS_OK) ? TCL_OK : TCL_ERROR;
+  } else {
+    Tcl_SetResult(interp, (char *) "Error: molecule not found.",
+                  TCL_STATIC);
+    return TCL_ERROR;
+  }
 }
 
 
@@ -124,11 +66,10 @@ colvarproxy_vmd::colvarproxy_vmd(Tcl_Interp *interp, VMDApp *v, int molid)
   : vmd(v),
     vmdmolid(molid),
 #if defined(VMDTKCON)
-    msgColvars("colvars: ", VMDCON_INFO),
+    msgColvars("colvars: ", VMDCON_INFO)
 #else
-    msgColvars("colvars: "),
+    msgColvars("colvars: ")
 #endif
-    input_prefix_str(""), output_prefix_str("")
 {
   version_int = get_version_from_string(COLVARPROXY_VERSION);
   b_simulation_running = false;
@@ -144,8 +85,6 @@ colvarproxy_vmd::colvarproxy_vmd(Tcl_Interp *interp, VMDApp *v, int molid)
   colvars->restart_out_freq = 0;
   cvm::rotation::monitor_crossings = false; // Avoid unnecessary error messages
 
-  total_force_requested = false;
-
   // Default to VMD's native unit system, but do not set the units string
   // to preserve the native workflow of VMD / NAMD / LAMMPS-real
   angstrom_value = 1.;
@@ -154,9 +93,6 @@ colvarproxy_vmd::colvarproxy_vmd(Tcl_Interp *interp, VMDApp *v, int molid)
   colvars->setup_input();
   colvars->setup_output();
 
-  script = new colvarscript(this);
-  script->proxy_error = COLVARSCRIPT_OK;
-
   // Do we have scripts?
   // For now colvars depend on Tcl, but this may not always be the case
   // in the future
@@ -164,6 +100,9 @@ colvarproxy_vmd::colvarproxy_vmd(Tcl_Interp *interp, VMDApp *v, int molid)
   have_scripts = true;
 
   tcl_interp_ = reinterpret_cast<void *>(interp);
+  // Need to set tcl_interp_ before constructing colvarscript
+  script = new colvarscript(this);
+  script->proxy_error = COLVARSCRIPT_OK;
 
   // User-scripted forces are not really useful in VMD, but we accept them
   // for compatibility with NAMD scripts
@@ -179,7 +118,7 @@ colvarproxy_vmd::colvarproxy_vmd(Tcl_Interp *interp, VMDApp *v, int molid)
   // set the same seed as in Measure.C
   vmd_srandom(38572111);
 
-  this->setup();
+  colvarproxy_vmd::setup();
 }
 
 
@@ -218,6 +157,38 @@ int colvarproxy_vmd::setup()
   }
 
   return COLVARS_OK;
+}
+
+
+cvm::real colvarproxy_vmd::backend_angstrom_value()
+{
+  return 1.0;
+}
+
+
+cvm::real colvarproxy_vmd::boltzmann()
+{
+  return 0.001987191;
+}
+
+
+cvm::real colvarproxy_vmd::temperature()
+{
+  // TODO define, document and implement a user method to set the value of this
+  return 300.0;
+}
+
+
+cvm::real colvarproxy_vmd::dt()
+{
+  // TODO define, document and implement a user method to set the value of this
+  return 1.0;
+}
+
+
+cvm::real colvarproxy_vmd::rand_gaussian()
+{
+  return vmd_random_gaussian();
 }
 
 
@@ -377,16 +348,22 @@ void colvarproxy_vmd::log(std::string const &message)
 
 void colvarproxy_vmd::error(std::string const &message)
 {
-  error_output += message;
+  add_error_msg(message);
   log(message);
 }
 
 
-void colvarproxy_vmd::fatal_error(std::string const &message)
+int colvarproxy_vmd::get_molid(int &molid)
 {
-  // Fatal error bit is already set, will be handled
-  // by tcl_colvars() before handing control back to VMD
-  error(message);
+  molid = vmdmolid;
+  return COLVARS_OK;
+}
+
+
+int colvarproxy_vmd::get_frame(long int &f)
+{
+  f = vmdmol_frame;
+  return COLVARS_OK;
 }
 
 
@@ -442,7 +419,7 @@ int colvarproxy_vmd::run_colvar_gradient_callback(
 char const *colvarproxy_vmd::script_obj_to_str(unsigned char *obj)
 {
 #ifdef VMDTCL // is TCL ever off?
-  return colvarproxy_vmd::tcl_obj_to_str(obj);
+  return colvarproxy_tcl::tcl_get_str(obj);
 #else
   // This is most likely not going to be executed
   return colvarproxy::script_obj_to_str(obj);

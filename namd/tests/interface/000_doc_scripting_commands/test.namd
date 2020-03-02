@@ -1,0 +1,48 @@
+# -*- tcl -*-
+
+# Note: see also test.restart.namd, test.legacy.namd, test.restart.legacy.namd
+
+source ../Common/common.namd
+
+colvars                 on
+
+run 0
+
+set output [open "test.output.dat" "w"]
+
+puts ${output} ======================================================================
+puts ${output} "List of general commands:"
+puts ${output} ""
+puts ${output} [cv help]
+
+puts ${output} ======================================================================
+puts ${output} "List of colvar commands:"
+puts ${output} ""
+puts ${output} [cv help colvar]
+
+puts ${output} ======================================================================
+puts ${output} "List of bias commands:"
+puts ${output} ""
+puts ${output} [cv help bias]
+
+puts ${output} "List of command descriptions:"
+puts ${output} ""
+
+foreach cmd [lsort [cv listcommands]] {
+    puts ${output} ======================================================================
+    puts ${output} "Help for script function \"${cmd}\":"
+    puts ${output} ""
+    if { [string range ${cmd} 0 2] == "cv_" } {
+        set subcmd [string range ${cmd} 3 end]
+        puts -nonewline ${output} "[cv help ${subcmd}]"
+    } elseif { [string range ${cmd} 0 4] == "bias_" } {
+        set subcmd [string range ${cmd} 5 end]
+        puts -nonewline ${output} "[cv bias name help ${subcmd}]"
+    } elseif { [string range ${cmd} 0 6] == "colvar_" } {
+        set subcmd [string range ${cmd} 7 end]
+        puts -nonewline ${output} "[cv colvar name help ${subcmd}]"
+    }
+}
+puts ${output} ======================================================================
+
+source ../Common/delete_tmp_files.tcl

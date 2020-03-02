@@ -29,7 +29,7 @@ create_test_dir() {
     # done
 
     dirname=`printf %03d ${n_test}`_$1
-    echo "$dirname was just created now"
+    echo " * $dirname was just created now"
     dirname="${WORKDIR}/$dirname"
     if [ ! -d ${dirname} ] ; then
         mkdir ${dirname}
@@ -95,6 +95,9 @@ create_test_dir "dihedralwalls"
 write_colvars_config "dihedral" "harmonicwalls360angle-fixed" ${dirname}/test.in
 write_colvars_config "dihedralwalls" "" ${dirname}/test.legacy.in
 
+create_test_dir "distance-wall-bypassExtended-off"
+write_colvars_config "distance-extended" "harmonicwalls-bypassExtended-off" ${dirname}/test.in
+
 # Tests for each colvar without a bias
 for colvar in \
     "distance" \
@@ -122,9 +125,6 @@ create_test_dir "distance-corrfunc"
 write_colvars_config "distance-corrfunc" "" ${dirname}/test.in
 
 
-m4 < metadynamics.in.m4 > metadynamics.in
-m4 -Dti_pmf < metadynamics.in.m4 > metadynamics-ti.in
-
 # NOTE: abf is not included because total/system force calculations
 # should be tested separately
 for colvar in "distance-grid" ; do
@@ -136,6 +136,7 @@ for colvar in "distance-grid" ; do
         "harmonic-k-moving" \
         "histogram" \
         "metadynamics" \
+        "metadynamics-sigmas" \
         "metadynamics-ti" \
         ; do
         create_test_dir ${colvar}_${bias}
@@ -145,6 +146,12 @@ done
 
 create_test_dir "distance-grid-expand_metadynamics"
 write_colvars_config "distance-grid-expand" "metadynamics" ${dirname}/test.in
+
+colvar="distance-extended-grid"
+for bias in "histogram" "histogram-bypassExtended"; do
+    create_test_dir ${colvar}_${bias}
+    write_colvars_config ${colvar} ${bias} ${dirname}/test.in
+done
 
 m4 -Daxis < distancez.in.m4 > distancez-axis.in
 m4 -Daxis -Dfitgroup < distancez.in.m4 > distancez-axis-fitgroup.in
@@ -230,6 +237,11 @@ write_colvars_config ${colvar}-fitgroup ${bias} ${dirname}/test.in
 
 colvar="dihedralPC"
 bias="abf2d"
+create_test_dir ${colvar}_${bias}
+write_colvars_config ${colvar} ${bias} ${dirname}/test.in
+
+colvar="dihedralPC"
+bias="metadynamics-2d"
 create_test_dir ${colvar}_${bias}
 write_colvars_config ${colvar} ${bias} ${dirname}/test.in
 

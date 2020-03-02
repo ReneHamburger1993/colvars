@@ -45,7 +45,6 @@ class colvarproxy_lammps : public colvarproxy {
   int  previous_step;
 
   bool first_timestep;
-  bool total_force_requested;
   bool do_exit;
 
   std::vector<int>          atoms_types;
@@ -59,7 +58,7 @@ class colvarproxy_lammps : public colvarproxy {
                      const char *, const int, const double, MPI_Comm);
   virtual ~colvarproxy_lammps();
   void init(const char*);
-  int setup();
+  virtual int setup();
 
  // disable default and copy constructor
  private:
@@ -86,10 +85,13 @@ class colvarproxy_lammps : public colvarproxy {
   void write_output_files();
 
   // read additional config from file
-  void add_config_file(char const *config_filename);
+  int add_config_file(char const *config_filename);
 
   // read additional config from string
-  void add_config_string(const std::string &config);
+  int add_config_string(const std::string &config);
+
+  // load a state file
+  int read_state_file(char const *state_filename);
 
   // Request to set the units used internally by Colvars
   int set_unit_system(std::string const &units_in, bool check_only);
@@ -107,7 +109,6 @@ class colvarproxy_lammps : public colvarproxy {
 
   void log(std::string const &message);
   void error(std::string const &message);
-  void fatal_error(std::string const &message);
 
   cvm::rvector position_distance(cvm::atom_pos const &pos1,
                                  cvm::atom_pos const &pos2) const;
